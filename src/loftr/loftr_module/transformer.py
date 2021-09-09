@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+from torch.nn.parameter import Parameter
 from .linear_attention import LinearAttention, FullAttention
 
 
@@ -67,9 +68,18 @@ class LocalFeatureTransformer(nn.Module):
         self.config = config
         self.d_model = config['d_model']
         self.nhead = config['nhead']
+        self.n_prototype = config['n_prototype']
         self.layer_names = config['layer_names']
         encoder_layer = LoFTREncoderLayer(config['d_model'], config['nhead'], config['attention'])
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
+        prototype_list = []
+        for name in self.layer_names:
+            if name == 'prototype':
+                p = torch.empty([self.n_prototype, self.d_model], requires_grad=True)
+                prototype_list.append(p)
+        if len(prototype_list)>0:
+            self.prototype_tensor = torch.stack(prototype_list, dim=0)
+            self.prototype_tensor = Parameter(self.prototype_tensor, requires_grad=True)
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -88,6 +98,8 @@ class LocalFeatureTransformer(nn.Module):
 
         assert self.d_model == feat0.size(2), "the feature number of src and transformer must be equal"
 
+        prototype_layer_count = 0
+
         for layer, name in zip(self.layers, self.layer_names):
             if name == 'self':
                 feat0 = layer(feat0, feat0, mask0, mask0)
@@ -95,6 +107,13 @@ class LocalFeatureTransformer(nn.Module):
             elif name == 'cross':
                 feat0 = layer(feat0, feat1, mask0, mask1)
                 feat1 = layer(feat1, feat0, mask1, mask0)
+            elif name == 'prototype':
+                p = self.prototype_tensor[prototype_layer_count]
+                bs = feat0.size(0)
+                pb = torch.stack([p] * bs, dim=0)
+                feat0 = layer(feat0, pb, mask0, None)
+                feat1 = layer(feat0, pb, mask1, None)
+                prototype_layer_count += 1
             else:
                 raise KeyError
 
