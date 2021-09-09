@@ -75,7 +75,7 @@ class LocalFeatureTransformer(nn.Module):
         prototype_list = []
         for name in self.layer_names:
             if name == 'prototype':
-                p = torch.empty([self.n_prototype, self.d_model], requires_grad=True)
+                p = torch.empty([self.n_prototype, self.d_model], dtype=torch.float)
                 prototype_list.append(p)
         if len(prototype_list)>0:
             self.prototype_tensor = torch.stack(prototype_list, dim=0)
