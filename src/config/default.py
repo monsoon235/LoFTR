@@ -19,8 +19,9 @@ _CN.LOFTR.COARSE.D_MODEL = 256
 _CN.LOFTR.COARSE.D_FFN = 256
 _CN.LOFTR.COARSE.NHEAD = 8
 _CN.LOFTR.COARSE.USE_PROTOTYPE = True
-_CN.LOFTR.COARSE.N_PROTOTYPE = 10
-_CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'self-cross', 'cross-self', 'cross-cross'] * 4
+_CN.LOFTR.COARSE.N_PROTOTYPE = 20
+_CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'cross-self'] * 4
+# _CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'self-cross', 'cross-self', 'cross-cross'] * 4
 # _CN.LOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
 _CN.LOFTR.COARSE.ATTENTION = 'linear'  # options: ['linear', 'full']
 _CN.LOFTR.COARSE.TEMP_BUG_FIX = True
@@ -43,6 +44,10 @@ _CN.LOFTR.FINE = CN()
 _CN.LOFTR.FINE.D_MODEL = 128
 _CN.LOFTR.FINE.D_FFN = 128
 _CN.LOFTR.FINE.NHEAD = 8
+# TODO fine-level 暂时不使用 prototype
+# _CN.LOFTR.COARSE.USE_PROTOTYPE = True
+# _CN.LOFTR.FINE.N_PROTOTYPE = 10
+# _CN.LOFTR.FINE.LAYER_NAMES = ['self-self', 'cross-self'] * 1
 _CN.LOFTR.FINE.LAYER_NAMES = ['self', 'cross'] * 1
 _CN.LOFTR.FINE.ATTENTION = 'linear'
 
@@ -60,11 +65,17 @@ _CN.LOFTR.LOSS.NEG_WEIGHT = 1.0
 # _CN.LOFTR.LOSS.DUAL_SOFTMAX = False  # whether coarse-level use dual-softmax or not.
 # use `_CN.LOFTR.MATCH_COARSE.MATCH_TYPE`
 
+_CN.LOFTR.LOSS.COARSE_USE_PROTOTYPE_LOSS = True
+_CN.LOFTR.LOSS.COARSE_PROTOTYPE_WEIGHT = 1.0
+
 # -- # fine-level
 _CN.LOFTR.LOSS.FINE_TYPE = 'l2_with_std'  # ['l2_with_std', 'l2']
 _CN.LOFTR.LOSS.FINE_WEIGHT = 1.0
 _CN.LOFTR.LOSS.FINE_CORRECT_THR = 1.0  # for filtering valid fine-level gts (some gt matches might fall out of the fine-level window)
 
+# TODO fine-level 暂时不使用 prototype
+# _CN.LOFTR.LOSS.FINE_USE_PROTOTYPE_LOSS = False
+# _CN.LOFTR.LOSS.FINE_PROTOTYPE_WEIGHT = 1.0
 
 ##############  Dataset  ##############
 _CN.DATASET = CN()

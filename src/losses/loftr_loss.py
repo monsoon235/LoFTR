@@ -11,7 +11,7 @@ class LoFTRLoss(nn.Module):
         self.loss_config = config['loftr']['loss']
         self.match_type = self.config['loftr']['match_coarse']['match_type']
         self.sparse_spvs = self.config['loftr']['match_coarse']['sparse_spvs']
-        
+
         # coarse-level
         self.correct_thr = self.loss_config['fine_correct_thr']
         self.c_pos_w = self.loss_config['pos_weight']
@@ -53,7 +53,7 @@ class LoFTRLoss(nn.Module):
             conf = torch.clamp(conf, 1e-6, 1-1e-6)
             alpha = self.loss_config['focal_alpha']
             gamma = self.loss_config['focal_gamma']
-            
+
             if self.sparse_spvs:
                 pos_conf = conf[:, :-1, :-1][pos_mask] \
                             if self.match_type == 'sinkhorn' \
@@ -78,7 +78,7 @@ class LoFTRLoss(nn.Module):
                         neg_w1 = (weight.sum(1) != 0)[neg1]
                         neg_mask = torch.cat([neg_w0, neg_w1], 0)
                         loss_neg = loss_neg[neg_mask]
-                
+
                 loss =  c_pos_w * loss_pos.mean() + c_neg_w * loss_neg.mean() \
                             if self.match_type == 'sinkhorn' \
                             else c_pos_w * loss_pos.mean()
@@ -94,7 +94,7 @@ class LoFTRLoss(nn.Module):
                 # each negative element occupy a smaller propotion than positive elements. => higher negative loss weight needed
         else:
             raise ValueError('Unknown coarse loss: {type}'.format(type=self.loss_config['coarse_type']))
-        
+
     def compute_fine_loss(self, expec_f, expec_f_gt):
         if self.fine_type == 'l2_with_std':
             return self._compute_fine_loss_l2_std(expec_f, expec_f_gt)
@@ -148,7 +148,27 @@ class LoFTRLoss(nn.Module):
         loss = (offset_l2 * weight[correct_mask]).mean()
 
         return loss
-    
+
+    def _compute_coarse_prototype_loss(self, data, weight=None):
+        # TODO 目前只使用 cross-entropy 损失
+        # spv_b_ids, spv_i_ids, spv_j_ids 是 gt 匹配
+        # b_ids, i_ids, j_ids 是粗匹配
+        b_ids, i_ids, j_ids = data['b_ids'], data['i_ids'], data['j_ids']  # [M]
+        spv_b_ids, spv_i_ids, spv_j_ids = data['spv_b_ids'], data['spv_i_ids'], data['spv_j_ids'] # [M]
+        class_map0, class_map1 = data['coarse_class0'], data['coarse_class1']  # [N, HW0]
+        p0, p1 = data['coarse_p0'], data['coarse_p1']  # [N, L, P]
+        point_class_0 = class_map0[spv_b_ids, spv_i_ids]
+        point_class_1 = class_map1[spv_b_ids, spv_j_ids]
+        is_same_class = point_class_0 == point_class_1 # [M]
+        point_class_corr_0 = p0[spv_b_ids, spv_i_ids]  # [M, P]
+        point_class_corr_1 = p1[spv_b_ids, spv_j_ids]  # [M, P]
+        point_class_corr_0 = torch.softmax(point_class_corr_0, dim=1)
+        point_class_corr_1 = torch.softmax(point_class_corr_1, dim=1)
+        cross_corr = torch.sum(point_class_corr_0 * point_class_corr_1, dim=1)  # [M]
+        loss = - (is_same_class * cross_corr) - (~is_same_class) * (1 - cross_corr)
+        loss = torch.mean(loss)
+        return loss
+
     @torch.no_grad()
     def compute_c_weight(self, data):
         """ compute element-wise weights for computing coarse-level loss. """
@@ -179,6 +199,12 @@ class LoFTRLoss(nn.Module):
         loss = loss_c * self.loss_config['coarse_weight']
         loss_scalars.update({"loss_c": loss_c.clone().detach().cpu()})
 
+        # coarse-level prototype class loss
+        if self.loss_config.get('coarse_use_prototype_loss', False):
+            loss_c_p = self._compute_coarse_prototype_loss(data, weight=c_weight)
+            loss += loss_c_p * self.loss_config['coarse_prototype_weight']
+            loss_scalars.update({'loss_c_p': loss_c_p.clone().detach().cpu()})
+
         # 2. fine-level loss
         loss_f = self.compute_fine_loss(data['expec_f'], data['expec_f_gt'])
         if loss_f is not None:
@@ -187,6 +213,13 @@ class LoFTRLoss(nn.Module):
         else:
             assert self.training is False
             loss_scalars.update({'loss_f': torch.tensor(1.)})  # 1 is the upper bound
+
+        # fine-level prototype class loss
+        if self.loss_config.get('fine_use_prototype_loss', False):
+            raise NotImplementedError
+            # loss_c_f = self._compute_prototype_loss(data['conf_matrix_gt'], data['fine_class0'], data['fine_class1'])
+            # loss += loss_c_f * self.loss_config['fine_prototype_weight']
+            # loss_scalars.update({'loss_c_f': loss_c_f.clone().detach().cpu()})
 
         loss_scalars.update({'loss': loss.clone().detach().cpu()})
         data.update({"loss": loss, "loss_scalars": loss_scalars})

@@ -81,15 +81,19 @@ class PL_LoFTR(pl.LightningModule):
     
     def _trainval_inference(self, batch):
         with self.profiler.profile("Compute coarse supervision"):
+            # 生成 coarse-level loss 计算所需要的数据
             compute_supervision_coarse(batch, self.config)
         
         with self.profiler.profile("LoFTR"):
+            # match 过程
             self.matcher(batch)
         
         with self.profiler.profile("Compute fine supervision"):
+            # 生成 fine-level loss 计算所需要的数据
             compute_supervision_fine(batch, self.config)
             
         with self.profiler.profile("Compute losses"):
+            # 计算 loss
             self.loss(batch)
     
     def _compute_metrics(self, batch):

@@ -101,8 +101,8 @@ class LocalFeatureTransformer(nn.Module):
             
             feat0_p = torch.einsum('nlc,pc->nlp', feat0, self.prototype)
             feat1_p = torch.einsum('nsc,pc->nsp', feat0, self.prototype)
-            kind0 = torch.argmax(feat0_p, dim=2)  # [N, L]
-            kind1 = torch.argmax(feat1_p, dim=2)  # [N, S]
+            class0 = torch.argmax(feat0_p, dim=2)  # [N, L]
+            class1 = torch.argmax(feat1_p, dim=2)  # [N, S]
 
             # TODO: 必须每个 batch, kind 单独处理，并行度受限
             feat0_out = torch.empty_like(feat0)
@@ -113,21 +113,21 @@ class LocalFeatureTransformer(nn.Module):
                 feat1_b = feat1[b]  # [S, C]
                 mask0_b = mask0[b]  # [L]
                 mask1_b = mask1[b]  # [S]
-                kind0_b = kind0[b]  # [L]
-                kind1_b = kind1[b]  # [S]
+                class0_b = class0[b]  # [L]
+                class1_b = class1[b]  # [S]
 
                 feat0_out_b_by_k = [None] * self.n_prototype  # [L', C] * P
                 feat1_out_b_by_k = [None] * self.n_prototype  # [S', C] * P
 
                 for k in range(self.n_prototype):
-                    feat0_b_k = feat0_b[kind0_b == k].unsqueeze(0)  # [1, L', C]
-                    feat1_b_k = feat1_b[kind1_b == k].unsqueeze(0)  # [1, S', C]
-                    mask0_b_k = mask0_b[kind0_b == k].unsqueeze(0)
-                    mask1_b_k = mask1_b[kind1_b == k].unsqueeze(0)
-                    feat0_b_not_k = feat0_b[kind0_b != k].unsqueeze(0)  # [1, L'', C]
-                    feat1_b_not_k = feat1_b[kind1_b != k].unsqueeze(0)  # [1, S'', C]
-                    mask0_b_not_k = mask0_b[kind0_b != k].unsqueeze(0)
-                    mask1_b_not_k = mask1_b[kind1_b != k].unsqueeze(0)
+                    feat0_b_k = feat0_b[class0_b == k].unsqueeze(0)  # [1, L', C]
+                    feat1_b_k = feat1_b[class1_b == k].unsqueeze(0)  # [1, S', C]
+                    mask0_b_k = mask0_b[class0_b == k].unsqueeze(0)
+                    mask1_b_k = mask1_b[class1_b == k].unsqueeze(0)
+                    feat0_b_not_k = feat0_b[class0_b != k].unsqueeze(0)  # [1, L'', C]
+                    feat1_b_not_k = feat1_b[class1_b != k].unsqueeze(0)  # [1, S'', C]
+                    mask0_b_not_k = mask0_b[class0_b != k].unsqueeze(0)
+                    mask1_b_not_k = mask1_b[class1_b != k].unsqueeze(0)
                     for layer, name in zip(self.layers, self.layer_names):
                         if name == 'self-self':
                             feat0_out_b_by_k[k] = layer(feat0_b_k, feat0_b_k, mask0_b_k, mask0_b_k)
@@ -149,6 +149,8 @@ class LocalFeatureTransformer(nn.Module):
 
             feat0, feat1 = feat0_out, feat1_out
 
+            return feat0, feat1, class0, class1, feat0_p, feat1_p
+
         else:
             for layer, name in zip(self.layers, self.layer_names):
                 if name == 'self':
@@ -160,4 +162,4 @@ class LocalFeatureTransformer(nn.Module):
                 else:
                     raise KeyError
 
-        return feat0, feat1
+            return feat0, feat1, None, None, None, None
