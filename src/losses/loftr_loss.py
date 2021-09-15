@@ -166,7 +166,7 @@ class LoFTRLoss(nn.Module):
         point_class_corr_1 = torch.softmax(point_class_corr_1, dim=1)
         cross_corr = torch.sum(point_class_corr_0 * point_class_corr_1, dim=1)  # [M]
         loss = - (is_same_class * cross_corr) - (~is_same_class) * (1 - cross_corr)
-        loss = torch.mean(loss)
+        loss = 1 + torch.mean(loss)
         return loss
 
     @torch.no_grad()
