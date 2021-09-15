@@ -2,6 +2,8 @@ import bisect
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+import torch.nn.functional
+import cv2
 
 
 def _compute_conf_thresh(data):
@@ -109,6 +111,39 @@ def _make_confidence_figure(data, b_id):
     raise NotImplementedError()
 
 
+def _make_prototype_figure(data, b_id):
+    img0 = (data['image0'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
+    img1 = (data['image1'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
+    # print(data['coarse_class0'][b_id].shape, data['hw0_c'])
+    class_map0 = data['coarse_class0'][b_id].detach().float().reshape(data['hw0_c'])
+    class_map1 = data['coarse_class1'][b_id].detach().float().reshape(data['hw1_c'])
+    import torch.nn.functional as F
+    class_map0 = class_map0.unsqueeze(0).unsqueeze(0)
+    class_map1 = class_map1.unsqueeze(0).unsqueeze(0)
+    class_map0 = F.interpolate(class_map0, size=img0.shape, mode='nearest')[0, 0]
+    class_map1 = F.interpolate(class_map1, size=img1.shape, mode='nearest')[0, 0]
+    class_map0 = class_map0.int().cpu().numpy()
+    class_map1 = class_map1.int().cpu().numpy()
+    dpi = 75
+    fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=dpi)
+    plt.tight_layout(pad=1)
+
+    img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
+    img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
+
+    color_num = data['coarse_p0'].size(2)
+    colors = [np.random.choice(range(256), size=3) for _ in range(color_num)]
+
+    for c in range(color_num):
+        img0[class_map0 == c] = img0[class_map0 == c] * 0.3 + colors[c] * 0.7
+        img1[class_map1 == c] = img1[class_map1 == c] * 0.3 + colors[c] * 0.7
+
+    axes[0].imshow(img0)
+    axes[1].imshow(img1)
+
+    return fig
+
+
 def make_matching_figures(data, config, mode='evaluation'):
     """ Make matching figures for a batch.
     
@@ -120,16 +155,21 @@ def make_matching_figures(data, config, mode='evaluation'):
     """
     assert mode in ['evaluation', 'confidence']  # 'confidence'
     figures = {mode: []}
+    figs = []
     for b_id in range(data['image0'].size(0)):
         if mode == 'evaluation':
             fig = _make_evaluation_figure(
                 data, b_id,
                 alpha=config.TRAINER.PLOT_MATCHES_ALPHA)
+            figs.append(fig)
+            fig = _make_prototype_figure(data, b_id)
+            figs.append(fig)
         elif mode == 'confidence':
             fig = _make_confidence_figure(data, b_id)
+            figs.append(fig)
         else:
             raise ValueError(f'Unknown plot mode: {mode}')
-    figures[mode].append(fig)
+    figures[mode].extend(figs)
     return figures
 
 
