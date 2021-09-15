@@ -61,7 +61,7 @@ class LoFTR(nn.Module):
         mask_c0 = mask_c1 = None  # mask is useful in training
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
-        feat_c0, feat_c1, coarse_class0, coarse_class1, coarse_p0, coarse_p1 = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
+        feat_c0, feat_c1, coarse_class0, coarse_class1, coarse_p0, coarse_p1, coarse_prototype = self.loftr_coarse(feat_c0, feat_c1, mask_c0, mask_c1)
 
         # set coarse-level class info
         data.update({
@@ -69,6 +69,7 @@ class LoFTR(nn.Module):
             'coarse_class1': coarse_class1,  # [N, S]
             'coarse_p0': coarse_p0,  # [N, L, P]
             'coarse_p1': coarse_p1,  # [N, S, P]
+            'coarse_prototype': coarse_prototype,
         })
 
         # 3. match coarse-level
@@ -80,7 +81,7 @@ class LoFTR(nn.Module):
         fine_class0, fine_class1, fine_p0, fine_p1 = None, None, None, None
 
         if feat_f0_unfold.size(0) != 0:  # at least one coarse level predicted
-            feat_f0_unfold, feat_f1_unfold, fine_class0, fine_class1, fine_p0, fine_p1 = self.loftr_fine(feat_f0_unfold, feat_f1_unfold)
+            feat_f0_unfold, feat_f1_unfold, fine_class0, fine_class1, fine_p0, fine_p1, fine_prototype = self.loftr_fine(feat_f0_unfold, feat_f1_unfold)
 
         # set fine-level class info
         data.update({
@@ -88,6 +89,7 @@ class LoFTR(nn.Module):
             'fine_class1': fine_class1,  # [N', WxW]
             'fine_p0': fine_p0,
             'fine_p1': fine_p1,
+            'fine_prototype': fine_prototype,
         })
 
         # 5. match fine-level

@@ -149,7 +149,7 @@ class LocalFeatureTransformer(nn.Module):
 
             feat0, feat1 = feat0_out, feat1_out
 
-            return feat0, feat1, class0, class1, feat0_p, feat1_p
+            return feat0, feat1, class0, class1, feat0_p, feat1_p, self.prototype
 
         else:
             for layer, name in zip(self.layers, self.layer_names):
@@ -162,4 +162,4 @@ class LocalFeatureTransformer(nn.Module):
                 else:
                     raise KeyError
 
-            return feat0, feat1, None, None, None, None
+            return feat0, feat1, None, None, None, None, None

@@ -167,6 +167,16 @@ class LoFTRLoss(nn.Module):
         cross_corr = torch.sum(point_class_corr_0 * point_class_corr_1, dim=1)  # [M]
         loss = - (is_same_class * cross_corr) - (~is_same_class) * (1 - cross_corr)
         loss = 1 + torch.mean(loss)
+        # 计算 diversity loss
+        prototype = data['coarse_prototype']
+        diversity_loss_sum = 0
+        for p in range(prototype.size(0)):
+            for q in range(prototype.size(0)):
+                if p != q:
+                    diversity_loss_sum += \
+                        torch.cosine_similarity(prototype[p], prototype[q], dim=0)
+        diversity_loss = diversity_loss_sum / (prototype.size(0) ** 2 - prototype.size(0))
+        loss += diversity_loss
         return loss
 
     @torch.no_grad()
