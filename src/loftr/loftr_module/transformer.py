@@ -98,9 +98,10 @@ class LocalFeatureTransformer(nn.Module):
         assert self.d_model == feat0.size(2), "the feature number of src and transformer must be equal"
 
         if self.use_prototype:
-            
-            feat0_p = torch.einsum('nlc,pc->nlp', feat0, self.prototype)
-            feat1_p = torch.einsum('nsc,pc->nsp', feat0, self.prototype)
+
+            # 禁止往 feat0 和 feat1 传播梯度
+            feat0_p = torch.einsum('nlc,pc->nlp', feat0.detach(), self.prototype)
+            feat1_p = torch.einsum('nsc,pc->nsp', feat1.detach(), self.prototype)
             class0 = torch.argmax(feat0_p, dim=2)  # [N, L]
             class1 = torch.argmax(feat1_p, dim=2)  # [N, S]
 

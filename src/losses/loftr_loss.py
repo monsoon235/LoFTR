@@ -167,6 +167,9 @@ class LoFTRLoss(nn.Module):
         cross_corr = torch.sum(point_class_corr_0 * point_class_corr_1, dim=1)  # [M]
         loss = - (is_same_class * cross_corr) - (~is_same_class) * (1 - cross_corr)
         loss = 1 + torch.mean(loss)
+        return loss
+
+    def _compute_coarse_diversity_loss(self, data):
         # 计算 diversity loss
         prototype = data['coarse_prototype']
         diversity_loss_sum = 0
@@ -175,9 +178,8 @@ class LoFTRLoss(nn.Module):
                 if p != q:
                     diversity_loss_sum += \
                         torch.cosine_similarity(prototype[p], prototype[q], dim=0)
-        diversity_loss = diversity_loss_sum / (prototype.size(0) ** 2 - prototype.size(0))
-        loss += diversity_loss
-        return loss
+        diversity_loss = 1 + diversity_loss_sum / (prototype.size(0) ** 2 - prototype.size(0))
+        return diversity_loss
 
     @torch.no_grad()
     def compute_c_weight(self, data):
@@ -214,6 +216,10 @@ class LoFTRLoss(nn.Module):
             loss_c_p = self._compute_coarse_prototype_loss(data, weight=c_weight)
             loss += loss_c_p * self.loss_config['coarse_prototype_weight']
             loss_scalars.update({'loss_c_p': loss_c_p.clone().detach().cpu()})
+
+            loss_c_p_diversity = self._compute_coarse_diversity_loss(data)
+            loss += loss_c_p_diversity * self.loss_config['coarse_prototype_diversity_weight']
+            loss_scalars.update({'loss_c_p_diversity': loss_c_p_diversity.clone().detach().cpu()})
 
         # 2. fine-level loss
         loss_f = self.compute_fine_loss(data['expec_f'], data['expec_f_gt'])

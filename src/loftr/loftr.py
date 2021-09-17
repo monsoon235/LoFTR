@@ -78,7 +78,7 @@ class LoFTR(nn.Module):
         # 4. fine-level refinement
         feat_f0_unfold, feat_f1_unfold = self.fine_preprocess(feat_f0, feat_f1, feat_c0, feat_c1, data)
 
-        fine_class0, fine_class1, fine_p0, fine_p1 = None, None, None, None
+        fine_class0, fine_class1, fine_p0, fine_p1, fine_prototype = None, None, None, None, None
 
         if feat_f0_unfold.size(0) != 0:  # at least one coarse level predicted
             feat_f0_unfold, feat_f1_unfold, fine_class0, fine_class1, fine_p0, fine_p1, fine_prototype = self.loftr_fine(feat_f0_unfold, feat_f1_unfold)

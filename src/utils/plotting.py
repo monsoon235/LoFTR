@@ -126,10 +126,18 @@ def _make_prototype_figure(data, b_id):
     class_map1 = class_map1.int().cpu().numpy()
     dpi = 75
     fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=dpi)
+    for i in range(2):  # clear all frames
+        axes[i].get_yaxis().set_ticks([])
+        axes[i].get_xaxis().set_ticks([])
+        for spine in axes[i].spines.values():
+            spine.set_visible(False)
     plt.tight_layout(pad=1)
 
-    img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
-    img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
+    # img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
+    # img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
+
+    img0 = np.stack([img0] * 3, axis=2)
+    img1 = np.stack([img1] * 3, axis=2)
 
     color_num = data['coarse_p0'].size(2)
     colors = [np.random.choice(range(256), size=3) for _ in range(color_num)]
@@ -162,8 +170,9 @@ def make_matching_figures(data, config, mode='evaluation'):
                 data, b_id,
                 alpha=config.TRAINER.PLOT_MATCHES_ALPHA)
             figs.append(fig)
-            fig = _make_prototype_figure(data, b_id)
-            figs.append(fig)
+            if config.LOFTR.COARSE.USE_PROTOTYPE:
+                fig = _make_prototype_figure(data, b_id)
+                figs.append(fig)
         elif mode == 'confidence':
             fig = _make_confidence_figure(data, b_id)
             figs.append(fig)
