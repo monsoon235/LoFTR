@@ -38,7 +38,7 @@ class MegaDepthDataset(Dataset):
         super().__init__()
         self.root_dir = root_dir
         self.mode = mode
-        self.scene_id = npz_path.split('.')[0]
+        self.scene_id = osp.splitext(npz_path)[0]
 
         # prepare scene_info and pair_info
         if mode == 'test' and min_overlap_score != 0:

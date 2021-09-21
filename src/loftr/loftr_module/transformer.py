@@ -86,7 +86,7 @@ class LocalFeatureTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, feat0, feat1, mask0=None, mask1=None):
+    def forward(self, feat0, feat1, mask0=None, mask1=None, feat0_wo_pe=None, feat1_wo_pe=None):
         """
         Args:
             feat0 (torch.Tensor): [N, L, C]
@@ -99,15 +99,17 @@ class LocalFeatureTransformer(nn.Module):
 
         if self.use_prototype:
 
-            # 禁止往 feat0 和 feat1 传播梯度
-            feat0_p = torch.einsum('nlc,pc->nlp', feat0.detach(), self.prototype)
-            feat1_p = torch.einsum('nsc,pc->nsp', feat1.detach(), self.prototype)
+            feat0_p = torch.einsum('nlc,pc->nlp', feat0_wo_pe, self.prototype)
+            feat1_p = torch.einsum('nsc,pc->nsp', feat1_wo_pe, self.prototype)
             class0 = torch.argmax(feat0_p, dim=2)  # [N, L]
             class1 = torch.argmax(feat1_p, dim=2)  # [N, S]
 
             # TODO: 必须每个 batch, kind 单独处理，并行度受限
             feat0_out = torch.empty_like(feat0)
             feat1_out = torch.empty_like(feat1)
+
+            prototype_wo_k_by_k = [torch.cat([self.prototype[:k, :], self.prototype[k + 1:, :]], dim=0).unsqueeze(0)
+                                   for k in range(self.n_prototype)]
 
             for b in range(feat0.size(0)):
                 feat0_b = feat0[b]  # [L, C]
@@ -117,31 +119,30 @@ class LocalFeatureTransformer(nn.Module):
                 class0_b = class0[b]  # [L]
                 class1_b = class1[b]  # [S]
 
-                feat0_out_b_by_k = [None] * self.n_prototype  # [L', C] * P
-                feat1_out_b_by_k = [None] * self.n_prototype  # [S', C] * P
+                feat0_out_b_by_k = [feat0_b[class0_b == k].unsqueeze(0) for k in range(self.n_prototype)]
+                feat1_out_b_by_k = [feat1_b[class1_b == k].unsqueeze(0) for k in range(self.n_prototype)]
+                mask0_b_by_k = [mask0_b[class0_b == k].unsqueeze(0) for k in range(self.n_prototype)]
+                mask1_b_by_k = [mask1_b[class1_b == k].unsqueeze(0) for k in range(self.n_prototype)]
 
                 for k in range(self.n_prototype):
-                    feat0_b_k = feat0_b[class0_b == k].unsqueeze(0)  # [1, L', C]
-                    feat1_b_k = feat1_b[class1_b == k].unsqueeze(0)  # [1, S', C]
-                    mask0_b_k = mask0_b[class0_b == k].unsqueeze(0)
-                    mask1_b_k = mask1_b[class1_b == k].unsqueeze(0)
-                    feat0_b_not_k = feat0_b[class0_b != k].unsqueeze(0)  # [1, L'', C]
-                    feat1_b_not_k = feat1_b[class1_b != k].unsqueeze(0)  # [1, S'', C]
-                    mask0_b_not_k = mask0_b[class0_b != k].unsqueeze(0)
-                    mask1_b_not_k = mask1_b[class1_b != k].unsqueeze(0)
+
                     for layer, name in zip(self.layers, self.layer_names):
+
                         if name == 'self-self':
-                            feat0_out_b_by_k[k] = layer(feat0_b_k, feat0_b_k, mask0_b_k, mask0_b_k)
-                            feat1_out_b_by_k[k] = layer(feat1_b_k, feat1_b_k, mask1_b_k, mask1_b_k)
-                        elif name == 'self-cross':
-                            feat0_out_b_by_k[k] = layer(feat0_b_k, feat0_b_not_k, mask0_b_k, mask0_b_not_k)
-                            feat1_out_b_by_k[k] = layer(feat1_b_k, feat1_b_not_k, mask1_b_k, mask1_b_not_k)
+                            feat0_out_b_by_k[k] = layer(feat0_out_b_by_k[k], feat0_out_b_by_k[k],
+                                                        mask0_b_by_k[k], mask0_b_by_k[k])
+                            feat1_out_b_by_k[k] = layer(feat1_out_b_by_k[k], feat1_out_b_by_k[k],
+                                                        mask1_b_by_k[k], mask1_b_by_k[k])
                         elif name == 'cross-self':
-                            feat0_out_b_by_k[k] = layer(feat0_b_k, feat1_b_k, mask0_b_k, mask1_b_k)
-                            feat1_out_b_by_k[k] = layer(feat1_b_k, feat0_b_k, mask1_b_k, mask0_b_k)
-                        elif name == 'cross-cross':
-                            feat0_out_b_by_k[k] = layer(feat0_b_k, feat1_b_not_k, mask0_b_k, mask1_b_not_k)
-                            feat1_out_b_by_k[k] = layer(feat1_b_k, feat0_b_not_k, mask1_b_k, mask0_b_not_k)
+                            feat0_out_b_by_k[k] = layer(feat0_out_b_by_k[k], feat1_out_b_by_k[k],
+                                                        mask0_b_by_k[k], mask1_b_by_k[k])
+                            feat1_out_b_by_k[k] = layer(feat1_out_b_by_k[k], feat0_out_b_by_k[k],
+                                                        mask1_b_by_k[k], mask0_b_by_k[k])
+                        elif name == 'prototype':
+                            feat0_out_b_by_k[k] = layer(feat0_out_b_by_k[k], prototype_wo_k_by_k[k],
+                                                        mask0_b_by_k[k], None)
+                            feat1_out_b_by_k[k] = layer(feat1_out_b_by_k[k], prototype_wo_k_by_k[k],
+                                                        mask1_b_by_k[k], None)
                         else:
                             raise KeyError
 

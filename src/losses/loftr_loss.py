@@ -217,6 +217,7 @@ class LoFTRLoss(nn.Module):
             loss += loss_c_p * self.loss_config['coarse_prototype_weight']
             loss_scalars.update({'loss_c_p': loss_c_p.clone().detach().cpu()})
 
+        if self.loss_config.get('coarse_use_prototype_diversity_loss'):
             loss_c_p_diversity = self._compute_coarse_diversity_loss(data)
             loss += loss_c_p_diversity * self.loss_config['coarse_prototype_diversity_weight']
             loss_scalars.update({'loss_c_p_diversity': loss_c_p_diversity.clone().detach().cpu()})

@@ -1,4 +1,5 @@
 from yacs.config import CfgNode as CN
+
 _CN = CN()
 
 ##############  ↓  LoFTR Pipeline  ↓  ##############
@@ -20,8 +21,8 @@ _CN.LOFTR.COARSE.D_FFN = 256
 _CN.LOFTR.COARSE.NHEAD = 8
 _CN.LOFTR.COARSE.USE_PROTOTYPE = True
 _CN.LOFTR.COARSE.N_PROTOTYPE = 10
-_CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'cross-self'] * 4
-# _CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'self-cross', 'cross-self', 'cross-cross'] * 4
+# _CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'cross-self'] * 4
+_CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'cross-self', 'prototype'] * 4
 # _CN.LOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
 _CN.LOFTR.COARSE.ATTENTION = 'linear'  # options: ['linear', 'full']
 _CN.LOFTR.COARSE.TEMP_BUG_FIX = True
@@ -65,9 +66,10 @@ _CN.LOFTR.LOSS.NEG_WEIGHT = 1.0
 # _CN.LOFTR.LOSS.DUAL_SOFTMAX = False  # whether coarse-level use dual-softmax or not.
 # use `_CN.LOFTR.MATCH_COARSE.MATCH_TYPE`
 
-_CN.LOFTR.LOSS.COARSE_USE_PROTOTYPE_LOSS = True
-_CN.LOFTR.LOSS.COARSE_PROTOTYPE_WEIGHT = 0.2
-_CN.LOFTR.LOSS.COARSE_PROTOTYPE_DIVERSITY_WEIGHT = 2
+_CN.LOFTR.LOSS.COARSE_USE_PROTOTYPE_LOSS = False
+_CN.LOFTR.LOSS.COARSE_PROTOTYPE_WEIGHT = 0.001
+_CN.LOFTR.LOSS.COARSE_USE_PROTOTYPE_DIVERSITY_LOSS = False
+_CN.LOFTR.LOSS.COARSE_PROTOTYPE_DIVERSITY_WEIGHT = 0.01
 
 # -- # fine-level
 _CN.LOFTR.LOSS.FINE_TYPE = 'l2_with_std'  # ['l2_with_std', 'l2']
@@ -91,14 +93,14 @@ _CN.DATASET.TRAIN_INTRINSIC_PATH = None
 _CN.DATASET.VAL_DATA_ROOT = None
 _CN.DATASET.VAL_POSE_ROOT = None  # (optional directory for poses)
 _CN.DATASET.VAL_NPZ_ROOT = None
-_CN.DATASET.VAL_LIST_PATH = None    # None if val data from all scenes are bundled into a single npz file
+_CN.DATASET.VAL_LIST_PATH = None  # None if val data from all scenes are bundled into a single npz file
 _CN.DATASET.VAL_INTRINSIC_PATH = None
 # testing
 _CN.DATASET.TEST_DATA_SOURCE = None
 _CN.DATASET.TEST_DATA_ROOT = None
 _CN.DATASET.TEST_POSE_ROOT = None  # (optional directory for poses)
 _CN.DATASET.TEST_NPZ_ROOT = None
-_CN.DATASET.TEST_LIST_PATH = None   # None if test data from all scenes are bundled into a single npz file
+_CN.DATASET.TEST_LIST_PATH = None  # None if test data from all scenes are bundled into a single npz file
 _CN.DATASET.TEST_INTRINSIC_PATH = None
 
 # 2. dataset config
@@ -134,7 +136,7 @@ _CN.TRAINER.WARMUP_STEP = 4800
 
 # learning rate scheduler
 _CN.TRAINER.SCHEDULER = 'MultiStepLR'  # [MultiStepLR, CosineAnnealing, ExponentialLR]
-_CN.TRAINER.SCHEDULER_INTERVAL = 'epoch'    # [epoch, step]
+_CN.TRAINER.SCHEDULER_INTERVAL = 'epoch'  # [epoch, step]
 _CN.TRAINER.MSLR_MILESTONES = [3, 6, 9, 12]  # MSLR: MultiStepLR
 _CN.TRAINER.MSLR_GAMMA = 0.5
 _CN.TRAINER.COSA_TMAX = 30  # COSA: CosineAnnealing
@@ -142,7 +144,7 @@ _CN.TRAINER.ELR_GAMMA = 0.999992  # ELR: ExponentialLR, this value for 'step' in
 
 # plotting related
 _CN.TRAINER.ENABLE_PLOTTING = True
-_CN.TRAINER.N_VAL_PAIRS_TO_PLOT = 32     # number of val/test paris for plotting
+_CN.TRAINER.N_VAL_PAIRS_TO_PLOT = 32  # number of val/test paris for plotting
 _CN.TRAINER.PLOT_MODE = 'evaluation'  # ['evaluation', 'confidence']
 _CN.TRAINER.PLOT_MATCHES_ALPHA = 'dynamic'
 

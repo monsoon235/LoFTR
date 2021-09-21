@@ -19,4 +19,4 @@ cfg.DATASET.MIN_OVERLAP_SCORE_TEST = 0.0   # for both test and val
 # (with difficulty balanced (further split each scene to 3 sub-scenes))
 cfg.TRAINER.N_SAMPLES_PER_SUBSET = 100//2
 
-cfg.DATASET.MGDPT_IMG_RESIZE = 640  # for training on 11GB mem GPUs
+cfg.DATASET.MGDPT_IMG_RESIZE = 620  # for training on 11GB mem GPUs

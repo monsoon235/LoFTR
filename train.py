@@ -66,7 +66,7 @@ def main():
     pl.seed_everything(config.TRAINER.SEED)  # reproducibility
     # TODO: Use different seeds for each dataloader workers
     # This is needed for data augmentation
-    
+
     # scale lr and warmup-step automatically
     args.gpus = _n_gpus = setup_gpus(args.gpus)
     config.TRAINER.WORLD_SIZE = _n_gpus * args.num_nodes
@@ -103,7 +103,7 @@ def main():
     # Lightning Trainer
     trainer = pl.Trainer.from_argparse_args(
         args,
-        plugins=DDPPlugin(find_unused_parameters=True,
+        plugins=DDPPlugin(find_unused_parameters=False,
                           num_nodes=args.num_nodes,
                           sync_batchnorm=config.TRAINER.WORLD_SIZE > 0),
         gradient_clip_val=config.TRAINER.GRADIENT_CLIPPING,
