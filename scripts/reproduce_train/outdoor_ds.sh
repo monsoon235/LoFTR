@@ -7,16 +7,16 @@ PROJECT_DIR="${SCRIPTPATH}/../../"
 export PYTHONPATH=$PROJECT_DIR:$PYTHONPATH
 cd $PROJECT_DIR
 
-TRAIN_IMG_SIZE=620
+TRAIN_IMG_SIZE=560
 # to reproduced the results in our paper, please use:
 # TRAIN_IMG_SIZE=840
 data_cfg_path="configs/data/megadepth_trainval_${TRAIN_IMG_SIZE}.py"
 main_cfg_path="configs/loftr/outdoor/loftr_ds_dense.py"
 
 n_nodes=1
-n_gpus_per_node=4
+n_gpus_per_node=3
 torch_num_workers=4
-batch_size=1
+batch_size=3
 pin_memory=true
 exp_name="outdoor-ds-${TRAIN_IMG_SIZE}-bs=$(($n_gpus_per_node * $n_nodes * $batch_size))"
 

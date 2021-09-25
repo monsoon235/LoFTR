@@ -1,4 +1,6 @@
 import copy
+from typing import List
+
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
@@ -99,59 +101,100 @@ class LocalFeatureTransformer(nn.Module):
 
         if self.use_prototype:
 
+            bs = feat0.size(0)
+            ks = self.n_prototype
+
             feat0_p = torch.einsum('nlc,pc->nlp', feat0_wo_pe, self.prototype)
             feat1_p = torch.einsum('nsc,pc->nsp', feat1_wo_pe, self.prototype)
             class0 = torch.argmax(feat0_p, dim=2)  # [N, L]
             class1 = torch.argmax(feat1_p, dim=2)  # [N, S]
 
-            # TODO: 必须每个 batch, kind 单独处理，并行度受限
-            feat0_out = torch.empty_like(feat0)
-            feat1_out = torch.empty_like(feat1)
+            feat0_by_b_by_k: List[List[torch.Tensor]] = [
+                [feat0[b][mask0[b] != 0 & class0[b] == k] for k in range(ks)]
+                for b in range(bs)
+            ]
+            feat1_by_b_by_k: List[List[torch.Tensor]] = [
+                [feat1[b][mask1[b] != 0 & class1[b] == k] for k in range(ks)]
+                for b in range(bs)
+            ]
 
-            prototype_wo_k_by_k = [torch.cat([self.prototype[:k, :], self.prototype[k + 1:, :]], dim=0).unsqueeze(0)
-                                   for k in range(self.n_prototype)]
-
-            for b in range(feat0.size(0)):
-                feat0_b = feat0[b]  # [L, C]
-                feat1_b = feat1[b]  # [S, C]
-                mask0_b = mask0[b]  # [L]
-                mask1_b = mask1[b]  # [S]
-                class0_b = class0[b]  # [L]
-                class1_b = class1[b]  # [S]
-
-                feat0_out_b_by_k = [feat0_b[class0_b == k].unsqueeze(0) for k in range(self.n_prototype)]
-                feat1_out_b_by_k = [feat1_b[class1_b == k].unsqueeze(0) for k in range(self.n_prototype)]
-                mask0_b_by_k = [mask0_b[class0_b == k].unsqueeze(0) for k in range(self.n_prototype)]
-                mask1_b_by_k = [mask1_b[class1_b == k].unsqueeze(0) for k in range(self.n_prototype)]
-
-                for k in range(self.n_prototype):
-
-                    for layer, name in zip(self.layers, self.layer_names):
-
+            for layer, name in zip(self.layers, self.layer_names):
+                for b in range(bs):
+                    for k in range(ks):
                         if name == 'self-self':
-                            feat0_out_b_by_k[k] = layer(feat0_out_b_by_k[k], feat0_out_b_by_k[k],
-                                                        mask0_b_by_k[k], mask0_b_by_k[k])
-                            feat1_out_b_by_k[k] = layer(feat1_out_b_by_k[k], feat1_out_b_by_k[k],
-                                                        mask1_b_by_k[k], mask1_b_by_k[k])
+                            feat0_by_b_by_k[b][k] = layer(
+                                feat0_by_b_by_k[b][k].unsqueeze(0), feat0_by_b_by_k[b][k].unsqueeze(0),
+                                None, None,
+                            ).squeeze(0)
+                            feat1_by_b_by_k[b][k] = layer(
+                                feat1_by_b_by_k[b][k].unsqueeze(0), feat1_by_b_by_k[b][k].unsqueeze(0),
+                                None, None,
+                            ).squeeze(0)
                         elif name == 'cross-self':
-                            feat0_out_b_by_k[k] = layer(feat0_out_b_by_k[k], feat1_out_b_by_k[k],
-                                                        mask0_b_by_k[k], mask1_b_by_k[k])
-                            feat1_out_b_by_k[k] = layer(feat1_out_b_by_k[k], feat0_out_b_by_k[k],
-                                                        mask1_b_by_k[k], mask0_b_by_k[k])
-                        elif name == 'prototype':
-                            feat0_out_b_by_k[k] = layer(feat0_out_b_by_k[k], prototype_wo_k_by_k[k],
-                                                        mask0_b_by_k[k], None)
-                            feat1_out_b_by_k[k] = layer(feat1_out_b_by_k[k], prototype_wo_k_by_k[k],
-                                                        mask1_b_by_k[k], None)
+                            feat0_by_b_by_k[b][k] = layer(
+                                feat0_by_b_by_k[b][k].unsqueeze(0), feat1_by_b_by_k[b][k].unsqueeze(0),
+                                None, None,
+                            ).squeeze(0)
+                            feat1_by_b_by_k[b][k] = layer(
+                                feat1_by_b_by_k[b][k].unsqueeze(0), feat0_by_b_by_k[b][k].unsqueeze(0),
+                                None, None,
+                            ).squeeze(0)
                         else:
                             raise KeyError
 
-                feat0_out[b] = torch.cat(feat0_out_b_by_k, dim=1)
-                feat1_out[b] = torch.cat(feat1_out_b_by_k, dim=1)
-
-            feat0, feat1 = feat0_out, feat1_out
+            for b in range(bs):
+                for k in range(ks):
+                    feat0[b][mask0[b] != 0 & class0[b] == k] = feat0_by_b_by_k[b][k]
+                    feat1[b][mask1[b] != 0 & class1[b] == k] = feat1_by_b_by_k[b][k]
 
             return feat0, feat1, class0, class1, feat0_p, feat1_p, self.prototype
+
+            ##############
+
+            # feat0_p = torch.einsum('nlc,pc->nlp', feat0_wo_pe, self.prototype)
+            # feat1_p = torch.einsum('nsc,pc->nsp', feat1_wo_pe, self.prototype)
+            # class0 = torch.argmax(feat0_p, dim=2)  # [N, L]
+            # class1 = torch.argmax(feat1_p, dim=2)  # [N, S]
+            #
+            # for layer, name in zip(self.layers, self.layer_names):
+            #
+            #     # TODO: 必须每个 batch, kind 单独处理，并行度受限
+            #     for b in range(feat0.size(0)):
+            #
+            #         for k in range(self.n_prototype):
+            #
+            #             if name == 'self-self':
+            #                 feat0[b][class0[b] == k] = layer(
+            #                     feat0[b][class0[b] == k].unsqueeze(0), feat0[b][class0[b] == k].unsqueeze(0),
+            #                     mask0[b][class0[b] == k].unsqueeze(0), mask0[b][class0[b] == k].unsqueeze(0),
+            #                 ).squeeze(0)
+            #                 feat1[b][class1[b] == k] = layer(
+            #                     feat1[b][class1[b] == k].unsqueeze(0), feat1[b][class1[b] == k].unsqueeze(0),
+            #                     mask1[b][class1[b] == k].unsqueeze(0), mask1[b][class1[b] == k].unsqueeze(0),
+            #                 ).squeeze(0)
+            #             elif name == 'cross-self':
+            #                 feat0[b][class0[b] == k] = layer(
+            #                     feat0[b][class0[b] == k].unsqueeze(0), feat1[b][class1[b] == k].unsqueeze(0),
+            #                     mask0[b][class0[b] == k].unsqueeze(0), mask1[b][class1[b] == k].unsqueeze(0),
+            #                 ).squeeze(0)
+            #                 feat1[b][class1[b] == k] = layer(
+            #                     feat1[b][class1[b] == k].unsqueeze(0), feat0[b][class0[b] == k].unsqueeze(0),
+            #                     mask1[b][class1[b] == k].unsqueeze(0), mask0[b][class0[b] == k].unsqueeze(0),
+            #                 ).squeeze(0)
+            #             elif name == 'prototype':
+            #                 prototype_wo_k = torch.cat([self.prototype[:k, :], self.prototype[k + 1:, :]], dim=0)
+            #                 feat0[b][class0[b] == k] = layer(
+            #                     feat0[b][class0[b] == k].squeeze(0), prototype_wo_k.unsqueeze(0),
+            #                     mask0[b][class0[b] == k].squeeze(0), None,
+            #                 ).squeeze(0)
+            #                 feat1[b][class1[b] == k] = layer(
+            #                     feat1[b][class1[b] == k].unsqueeze(0), prototype_wo_k.unsqueeze(0),
+            #                     mask1[b][class0[b] == k].unsqueeze(0), None,
+            #                 ).squeeze(0)
+            #             else:
+            #                 raise KeyError
+            #
+            # return feat0, feat1, class0, class1, feat0_p, feat1_p, self.prototype
 
         else:
             for layer, name in zip(self.layers, self.layer_names):
