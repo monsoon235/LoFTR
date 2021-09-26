@@ -110,11 +110,11 @@ class LocalFeatureTransformer(nn.Module):
             class1 = torch.argmax(feat1_p, dim=2)  # [N, S]
 
             feat0_by_b_by_k: List[List[torch.Tensor]] = [
-                [feat0[b][mask0[b] != 0 & class0[b] == k] for k in range(ks)]
+                [feat0[b][(mask0[b] != 0) & (class0[b] == k)] for k in range(ks)]
                 for b in range(bs)
             ]
             feat1_by_b_by_k: List[List[torch.Tensor]] = [
-                [feat1[b][mask1[b] != 0 & class1[b] == k] for k in range(ks)]
+                [feat1[b][(mask1[b] != 0) & (class1[b] == k)] for k in range(ks)]
                 for b in range(bs)
             ]
 
@@ -144,8 +144,8 @@ class LocalFeatureTransformer(nn.Module):
 
             for b in range(bs):
                 for k in range(ks):
-                    feat0[b][mask0[b] != 0 & class0[b] == k] = feat0_by_b_by_k[b][k]
-                    feat1[b][mask1[b] != 0 & class1[b] == k] = feat1_by_b_by_k[b][k]
+                    feat0[b][(mask0[b] != 0) & (class0[b] == k)] = feat0_by_b_by_k[b][k]
+                    feat1[b][(mask1[b] != 0) & (class1[b] == k)] = feat1_by_b_by_k[b][k]
 
             return feat0, feat1, class0, class1, feat0_p, feat1_p, self.prototype
 
