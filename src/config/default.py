@@ -21,10 +21,11 @@ _CN.LOFTR.COARSE.D_FFN = 256
 _CN.LOFTR.COARSE.NHEAD = 8
 _CN.LOFTR.COARSE.USE_PROTOTYPE = True
 _CN.LOFTR.COARSE.N_PROTOTYPE = 10
+_CN.LOFTR.COARSE.NUM_SAMPLE = 50
 _CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'cross-self'] * 4
 # _CN.LOFTR.COARSE.LAYER_NAMES = ['self-self', 'cross-self', 'prototype'] * 4
 # _CN.LOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
-_CN.LOFTR.COARSE.ATTENTION = 'linear'  # options: ['linear', 'full']
+_CN.LOFTR.COARSE.ATTENTION = 'full'  # options: ['linear', 'full']
 _CN.LOFTR.COARSE.TEMP_BUG_FIX = True
 
 # 3. Coarse-Matching config

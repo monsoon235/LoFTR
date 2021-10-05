@@ -53,7 +53,7 @@ class FullAttention(Module):
         self.use_dropout = use_dropout
         self.dropout = Dropout(attention_dropout)
 
-    def forward(self, queries, keys, values, q_mask=None, kv_mask=None):
+    def forward(self, queries, keys, values, q_mask=None, kv_mask=None, q_class=None, kv_class=None):
         """ Multi-head scaled dot-product attention, a.k.a full attention.
         Args:
             queries: [N, L, H, D]
@@ -61,6 +61,8 @@ class FullAttention(Module):
             values: [N, S, H, D]
             q_mask: [N, L]
             kv_mask: [N, S]
+            q_class: [N, L]
+            kv_class: [N, S]
         Returns:
             queried_values: (N, L, H, D)
         """
@@ -70,8 +72,12 @@ class FullAttention(Module):
         if kv_mask is not None:
             QK.masked_fill_(~(q_mask[:, :, None, None] * kv_mask[:, None, :, None]), float('-inf'))
 
+        # 对 QK 加一个 LxS 的 mask
+        if (q_class is not None) and (kv_class is not None):
+            QK.masked_fill_(~(q_class[:, :, None, None] == kv_class[:, None, :, None]), float('-inf'))
+
         # Compute the attention and the weighted average
-        softmax_temp = 1. / queries.size(3)**.5  # sqrt(D)
+        softmax_temp = 1. / queries.size(3) ** .5  # sqrt(D)
         A = torch.softmax(softmax_temp * QK, dim=2)
         if self.use_dropout:
             A = self.dropout(A)

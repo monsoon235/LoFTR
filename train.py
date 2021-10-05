@@ -113,7 +113,7 @@ def main():
         replace_sampler_ddp=False,  # use custom sampler
         reload_dataloaders_every_epoch=False,  # avoid repeated samples!
         weights_summary='full',
-        profiler=profiler)
+        profiler='pytorch')
     loguru_logger.info(f"Trainer initialized!")
     loguru_logger.info(f"Start training!")
     trainer.fit(model, datamodule=data_module)
