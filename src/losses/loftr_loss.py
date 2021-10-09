@@ -9,9 +9,10 @@ class LoFTRLoss(nn.Module):
         super().__init__()
         self.config = config  # config under the global namespace
         self.loss_config = config['loftr']['loss']
+        self.match_type_a = self.config['loftr']['coarse']['geometry']['matcher']['match_type']
         self.match_type = self.config['loftr']['match_coarse']['match_type']
         self.sparse_spvs = self.config['loftr']['match_coarse']['sparse_spvs']
-        
+
         # coarse-level
         self.correct_thr = self.loss_config['fine_correct_thr']
         self.c_pos_w = self.loss_config['pos_weight']
@@ -53,7 +54,7 @@ class LoFTRLoss(nn.Module):
             conf = torch.clamp(conf, 1e-6, 1-1e-6)
             alpha = self.loss_config['focal_alpha']
             gamma = self.loss_config['focal_gamma']
-            
+
             if self.sparse_spvs:
                 pos_conf = conf[:, :-1, :-1][pos_mask] \
                             if self.match_type == 'sinkhorn' \
@@ -78,7 +79,7 @@ class LoFTRLoss(nn.Module):
                         neg_w1 = (weight.sum(1) != 0)[neg1]
                         neg_mask = torch.cat([neg_w0, neg_w1], 0)
                         loss_neg = loss_neg[neg_mask]
-                
+
                 loss =  c_pos_w * loss_pos.mean() + c_neg_w * loss_neg.mean() \
                             if self.match_type == 'sinkhorn' \
                             else c_pos_w * loss_pos.mean()
@@ -94,7 +95,7 @@ class LoFTRLoss(nn.Module):
                 # each negative element occupy a smaller propotion than positive elements. => higher negative loss weight needed
         else:
             raise ValueError('Unknown coarse loss: {type}'.format(type=self.loss_config['coarse_type']))
-        
+
     def compute_fine_loss(self, expec_f, expec_f_gt):
         if self.fine_type == 'l2_with_std':
             return self._compute_fine_loss_l2_std(expec_f, expec_f_gt)
@@ -148,7 +149,7 @@ class LoFTRLoss(nn.Module):
         loss = (offset_l2 * weight[correct_mask]).mean()
 
         return loss
-    
+
     @torch.no_grad()
     def compute_c_weight(self, data):
         """ compute element-wise weights for computing coarse-level loss. """
@@ -171,12 +172,22 @@ class LoFTRLoss(nn.Module):
         c_weight = self.compute_c_weight(data)
 
         # 1. coarse-level loss
+        # 两个粗匹配都计算损失
+        loss_c_a =self.compute_coarse_loss(
+            data['conf_matrix_with_bin_a'] if self.sparse_spvs and self.match_type == 'sinkhorn' \
+                else data['conf_matrix_a'],
+            data['conf_matrix_gt'],
+            weight=c_weight
+        )
+        loss = loss_c_a * self.loss_config['coarse_weight_a']
+        loss_scalars.update({"loss_c_a": loss_c_a.clone().detach().cpu()})
+
         loss_c = self.compute_coarse_loss(
             data['conf_matrix_with_bin'] if self.sparse_spvs and self.match_type == 'sinkhorn' \
                 else data['conf_matrix'],
             data['conf_matrix_gt'],
             weight=c_weight)
-        loss = loss_c * self.loss_config['coarse_weight']
+        loss += loss_c * self.loss_config['coarse_weight']
         loss_scalars.update({"loss_c": loss_c.clone().detach().cpu()})
 
         # 2. fine-level loss

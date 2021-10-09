@@ -2,6 +2,7 @@ import copy
 import torch
 import torch.nn as nn
 from .linear_attention import LinearAttention, FullAttention
+from .geometry_layer import GeometryLayer
 
 
 class LoFTREncoderLayer(nn.Module):
@@ -69,7 +70,14 @@ class LocalFeatureTransformer(nn.Module):
         self.nhead = config['nhead']
         self.layer_names = config['layer_names']
         encoder_layer = LoFTREncoderLayer(config['d_model'], config['nhead'], config['attention'])
-        self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
+        # self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
+        layers_list = []
+        for name in self.layer_names:
+            if name == 'geometry':
+                layers_list.append(GeometryLayer(config['geometry'], self.d_model))
+            else:
+                layers_list.append(copy.deepcopy(encoder_layer))
+        self.layers = nn.ModuleList(layers_list)
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -77,11 +85,12 @@ class LocalFeatureTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, feat0, feat1, mask0=None, mask1=None):
+    def forward(self, feat0, feat1, data, mask0=None, mask1=None):
         """
         Args:
             feat0 (torch.Tensor): [N, L, C]
             feat1 (torch.Tensor): [N, S, C]
+            data (dict):
             mask0 (torch.Tensor): [N, L] (optional)
             mask1 (torch.Tensor): [N, S] (optional)
         """
@@ -95,6 +104,8 @@ class LocalFeatureTransformer(nn.Module):
             elif name == 'cross':
                 feat0 = layer(feat0, feat1, mask0, mask1)
                 feat1 = layer(feat1, feat0, mask1, mask0)
+            elif name == 'geometry':
+                feat0, feat1 = layer(feat0, feat1, data, mask0, mask1)
             else:
                 raise KeyError
 

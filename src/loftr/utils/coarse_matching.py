@@ -84,7 +84,7 @@ class CoarseMatching(nn.Module):
         else:
             raise NotImplementedError()
 
-    def forward(self, feat_c0, feat_c1, data, mask_c0=None, mask_c1=None):
+    def forward(self, feat_c0, feat_c1, data, mask_c0=None, mask_c1=None, only_find_matches=False):
         """
         Args:
             feat0 (torch.Tensor): [N, L, C]
@@ -92,6 +92,7 @@ class CoarseMatching(nn.Module):
             data (dict)
             mask_c0 (torch.Tensor): [N, L] (optional)
             mask_c1 (torch.Tensor): [N, S] (optional)
+            only_find_matches: bool
         Update:
             data (dict): {
                 'b_ids' (torch.Tensor): [M'],
@@ -116,6 +117,13 @@ class CoarseMatching(nn.Module):
                 sim_matrix.masked_fill_(
                     ~(mask_c0[..., None] * mask_c1[:, None]).bool(),
                     -INF)
+
+            #################
+            # if self.training:
+            #     tmp_min = sim_matrix.min()
+            #     assert tmp_min < float('inf')
+            #################
+
             conf_matrix = F.softmax(sim_matrix, 1) * F.softmax(sim_matrix, 2)
 
         elif self.match_type == 'sinkhorn':
@@ -145,14 +153,15 @@ class CoarseMatching(nn.Module):
         data.update({'conf_matrix': conf_matrix})
 
         # predict coarse matches from conf_matrix
-        data.update(**self.get_coarse_match(conf_matrix, data))
+        data.update(**self.get_coarse_match(conf_matrix, data, only_find_matches=only_find_matches))
 
     @torch.no_grad()
-    def get_coarse_match(self, conf_matrix, data):
+    def get_coarse_match(self, conf_matrix, data, only_find_matches=False):
         """
         Args:
             conf_matrix (torch.Tensor): [N, L, S]
             data (dict): with keys ['hw0_i', 'hw1_i', 'hw0_c', 'hw1_c']
+            only_find_matches: bool
         Returns:
             coarse_matches (dict): {
                 'b_ids' (torch.Tensor): [M'],
@@ -194,6 +203,14 @@ class CoarseMatching(nn.Module):
         b_ids, i_ids = torch.where(mask_v)
         j_ids = all_j_ids[b_ids, i_ids]
         mconf = conf_matrix[b_ids, i_ids, j_ids]
+
+        if only_find_matches:
+            return {
+                'b_ids': b_ids,
+                'i_ids': i_ids,
+                'j_ids': j_ids,
+                'mconf': mconf,
+            }
 
         # 4. Random sampling of training samples for fine-level LoFTR
         # (optional) pad samples with gt coarse-level matches

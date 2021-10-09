@@ -43,7 +43,17 @@ class FineMatching(nn.Module):
         feat_f0_picked = feat_f0_picked = feat_f0[:, WW//2, :]
         sim_matrix = torch.einsum('mc,mrc->mr', feat_f0_picked, feat_f1)
         softmax_temp = 1. / C**.5
-        heatmap = torch.softmax(softmax_temp * sim_matrix, dim=1).view(-1, W, W)
+
+        tmp = softmax_temp * sim_matrix
+
+        #################
+        # if self.training:
+        #     tmp_min = tmp.min()
+        #     assert tmp_min < float('inf')
+        #################
+
+        # heatmap = torch.softmax(softmax_temp * sim_matrix, dim=1).view(-1, W, W)
+        heatmap = torch.softmax(tmp, dim=1).view(-1, W, W)
 
         # compute coordinates from heatmap
         coords_normalized = dsnt.spatial_expectation2d(heatmap[None], True)[0]  # [M, 2]
