@@ -1,5 +1,6 @@
 import math
 import argparse
+import os
 import pprint
 from distutils.util import strtobool
 from pathlib import Path
@@ -66,7 +67,7 @@ def main():
     pl.seed_everything(config.TRAINER.SEED)  # reproducibility
     # TODO: Use different seeds for each dataloader workers
     # This is needed for data augmentation
-    
+
     # scale lr and warmup-step automatically
     args.gpus = _n_gpus = setup_gpus(args.gpus)
     config.TRAINER.WORLD_SIZE = _n_gpus * args.num_nodes
@@ -75,20 +76,23 @@ def main():
     config.TRAINER.SCALING = _scaling
     config.TRAINER.TRUE_LR = config.TRAINER.CANONICAL_LR * _scaling
     config.TRAINER.WARMUP_STEP = math.floor(config.TRAINER.WARMUP_STEP / _scaling)
-    
+
     # lightning module
     profiler = build_profiler(args.profiler_name)
     model = PL_LoFTR(config, pretrained_ckpt=args.ckpt_path, profiler=profiler)
     loguru_logger.info(f"LoFTR LightningModule initialized!")
-    
+
     # lightning data
     data_module = MultiSceneDataModule(args, config)
     loguru_logger.info(f"LoFTR DataModule initialized!")
-    
+
     # TensorBoard Logger
-    logger = TensorBoardLogger(save_dir='logs/tb_logs', name=args.exp_name, default_hp_metric=False)
+    if os.getenv('IN_BITAHUB') is not None:
+        logger = TensorBoardLogger(save_dir='/output/logs/tb_logs', name=args.exp_name, default_hp_metric=False)
+    else:
+        logger = TensorBoardLogger(save_dir='logs/tb_logs', name=args.exp_name, default_hp_metric=False)
     ckpt_dir = Path(logger.log_dir) / 'checkpoints'
-    
+
     # Callbacks
     # TODO: update ModelCheckpoint to monitor multiple metrics
     ckpt_callback = ModelCheckpoint(monitor='auc@10', verbose=True, save_top_k=5, mode='max',
@@ -99,7 +103,7 @@ def main():
     callbacks = [lr_monitor]
     if not args.disable_ckpt:
         callbacks.append(ckpt_callback)
-    
+
     # Lightning Trainer
     trainer = pl.Trainer.from_argparse_args(
         args,
