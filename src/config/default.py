@@ -6,6 +6,9 @@ _CN.LOFTR = CN()
 _CN.LOFTR.BACKBONE_TYPE = 'ResNetFPN'
 _CN.LOFTR.RESOLUTION = (8, 2)  # options: [(8, 2), (16, 4)]
 _CN.LOFTR.FINE_WINDOW_SIZE = 5  # window_size in fine_level, must be odd
+_CN.LOFTR.FINE_USE_WINDOW_SAMPLE = True
+_CN.LOFTR.FINE_SAMPLE_WINDOW_SIZE = 10
+_CN.LOFTR.FINE_SAMPLE_NUM = 25
 _CN.LOFTR.FINE_CONCAT_COARSE_FEAT = True
 
 # 1. LoFTR-backbone (local feature CNN) config

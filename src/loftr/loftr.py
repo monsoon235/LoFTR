@@ -24,7 +24,7 @@ class LoFTR(nn.Module):
         self.coarse_matching = CoarseMatching(config['match_coarse'])
         self.fine_preprocess = FinePreprocess(config)
         self.loftr_fine = LocalFeatureTransformer(config["fine"])
-        self.fine_matching = FineMatching()
+        self.fine_matching = FineMatching(config)
 
     def forward(self, data):
         """ 
