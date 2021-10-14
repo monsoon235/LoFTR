@@ -1,14 +1,22 @@
+import os
+
 from configs.data.base import cfg
 
 
-TRAIN_BASE_PATH = "data/megadepth/index"
+if os.getenv('IN_BITAHUB') is not None:
+    TRAIN_BASE_PATH = "/data/monsoon/LoFTR_extra/train-data/megadepth_indices"
+else:
+    TRAIN_BASE_PATH = "data/megadepth/index"
 cfg.DATASET.TRAINVAL_DATA_SOURCE = "MegaDepth"
 cfg.DATASET.TRAIN_DATA_ROOT = "data/megadepth/train"
 cfg.DATASET.TRAIN_NPZ_ROOT = f"{TRAIN_BASE_PATH}/scene_info_0.1_0.7"
 cfg.DATASET.TRAIN_LIST_PATH = f"{TRAIN_BASE_PATH}/trainvaltest_list/train_list.txt"
 cfg.DATASET.MIN_OVERLAP_SCORE_TRAIN = 0.0
 
-TEST_BASE_PATH = "data/megadepth/index"
+if os.getenv('IN_BITAHUB') is not None:
+    TEST_BASE_PATH = "/data/monsoon/LoFTR_extra/train-data/megadepth_indices"
+else:
+    TEST_BASE_PATH = "data/megadepth/index"
 cfg.DATASET.TEST_DATA_SOURCE = "MegaDepth"
 cfg.DATASET.VAL_DATA_ROOT = cfg.DATASET.TEST_DATA_ROOT = "data/megadepth/test"
 cfg.DATASET.VAL_NPZ_ROOT = cfg.DATASET.TEST_NPZ_ROOT = f"{TEST_BASE_PATH}/scene_info_val_1500"

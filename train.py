@@ -1,5 +1,6 @@
 import math
 import argparse
+import os
 import pprint
 from distutils.util import strtobool
 from pathlib import Path
@@ -86,7 +87,10 @@ def main():
     loguru_logger.info(f"LoFTR DataModule initialized!")
     
     # TensorBoard Logger
-    logger = TensorBoardLogger(save_dir='logs/tb_logs', name=args.exp_name, default_hp_metric=False)
+    if os.getenv('IN_BITAHUB') is not None:
+        logger = TensorBoardLogger(save_dir='/output/logs/tb_logs', name=args.exp_name, default_hp_metric=False)
+    else:
+        logger = TensorBoardLogger(save_dir='logs/tb_logs', name=args.exp_name, default_hp_metric=False)
     ckpt_dir = Path(logger.log_dir) / 'checkpoints'
     
     # Callbacks
