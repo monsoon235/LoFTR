@@ -101,7 +101,7 @@ class GeometryLayer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward_no_enough_matches(self, feat0: torch.Tensor, feat1: torch.Tensor):
+    def get_coord_dist_no_enough_matches(self, feat0: torch.Tensor, feat1: torch.Tensor):
 
         _device = feat0.device
         _dtype = feat0.dtype
@@ -113,15 +113,9 @@ class GeometryLayer(nn.Module):
         img0_rest = torch.zeros(size=(bs, l, self.anchor_num * 2), dtype=_dtype, device=_device)
         img1_rest = torch.zeros(size=(bs, s, self.anchor_num * 2), dtype=_dtype, device=_device)
 
-        feat0_in = torch.cat([feat0, img0_rest], dim=2).transpose(1, 2)
-        feat1_in = torch.cat([feat1, img1_rest], dim=2).transpose(1, 2)
+        return img0_rest, img1_rest
 
-        feat0 = self.conv(feat0_in).transpose(1, 2)
-        feat1 = self.conv(feat1_in).transpose(1, 2)
-
-        return feat0, feat1
-
-    def forward(self, feat0, feat1, data, mask0=None, mask1=None):
+    def get_coord_dist(self, feat0, feat1, data, mask0=None, mask1=None):
 
         _device = feat0.device
         _dtype = feat0.dtype
@@ -150,7 +144,7 @@ class GeometryLayer(nn.Module):
             # 检查每个 batch 是否至少有 4 个匹配，否则不做处理
             for b in range(bs):
                 if (b_ids_gt == b).sum() < 4:
-                    return self.forward_no_enough_matches(feat0, feat1)
+                    return self.get_coord_dist_no_enough_matches(feat0, feat1)
             matches = get_matches(b_ids_gt, i_ids_gt, j_ids_gt, hw0_c, hw1_c, bs=bs)  # bs x [M, 2, 2]
             anchors = get_anchors(matches, anchor_num=self.anchor_num)  # [bs, anchor_num, 2, 2]
         else:
@@ -162,7 +156,7 @@ class GeometryLayer(nn.Module):
             # 检查每个 batch 是否至少有 4 个匹配，否则不做处理
             for b in range(bs):
                 if (b_ids == b).sum() < 4:
-                    return self.forward_no_enough_matches(feat0, feat1)
+                    return self.get_coord_dist_no_enough_matches(feat0, feat1)
             matches = get_matches(b_ids, i_ids, j_ids, hw0_c, hw1_c, bs=bs)
             anchors = get_anchors(matches, anchor_num=self.anchor_num, mconf=mconf, b_ids=b_ids)
         anchors = anchors.to(dtype=_dtype)
@@ -191,7 +185,7 @@ class GeometryLayer(nn.Module):
                     transform_matrix_b, _ = cv2.findHomography(srcPoints=m[:, 0, :], dstPoints=m[:, 1, :],
                                                                method=cv2.RANSAC)
                 if transform_matrix_b is None:
-                    return self.forward_no_enough_matches(feat0, feat1)
+                    return self.get_coord_dist_no_enough_matches(feat0, feat1)
                 transform_matrix_b = torch.tensor(transform_matrix_b, dtype=_dtype, device=_device)
                 transform_matrix_by_b.append(transform_matrix_b)
             transform_matrix = torch.stack(transform_matrix_by_b, dim=0)  # [bs, 3, 3]
@@ -232,11 +226,18 @@ class GeometryLayer(nn.Module):
         # img0_arc = torch.atan(img0_grad) / (math.pi / 2)
         # img1_arc = torch.atan(img1_grad) / (math.pi / 2)
 
-        # feat0_in = torch.cat([feat0, img0_dist, img0_arc], dim=2).transpose(1, 2)
-        # feat1_in = torch.cat([feat1, img1_dist, img1_arc], dim=2).transpose(1, 2)
+        img0_coord_dist = img0_coord_dist.flatten(2, 3)
+        img1_coord_dist = img1_coord_dist.flatten(2, 3)
 
-        feat0_in = torch.cat([feat0, img0_coord_dist.flatten(2, 3)], dim=2).transpose(1, 2)
-        feat1_in = torch.cat([feat1, img1_coord_dist.flatten(2, 3)], dim=2).transpose(1, 2)
+        return img0_coord_dist, img1_coord_dist
+
+    def forward(self, feat0, feat1, data, mask0=None, mask1=None):
+
+        with torch.no_grad():
+            img0_coord_dist, img1_coord_dist = self.get_coord_dist(feat0, feat1, data, mask0, mask1)
+
+        feat0_in = torch.cat([feat0, img0_coord_dist], dim=2).transpose(1, 2)
+        feat1_in = torch.cat([feat1, img1_coord_dist], dim=2).transpose(1, 2)
 
         # print('===== DEBUG BEGIN =====')
         #
