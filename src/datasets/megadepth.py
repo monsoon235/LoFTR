@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 import numpy as np
 import torch
@@ -6,6 +7,16 @@ from torch.utils.data import Dataset
 from loguru import logger
 
 from src.utils.dataset import read_megadepth_gray, read_megadepth_depth
+
+
+def get_bitahub_path(path: str) -> str:
+    if path.startswith('phoenix'):
+        base_dir = '/data/1015323606/MegaDepth_V1'
+    elif path.startswith('Undistorted_SfM') or path.startswith('scene_info'):
+        base_dir = '/data/monsoon/megadepth_d2net'
+    else:
+        raise NotImplementedError()
+    return osp.join(base_dir, path)
 
 
 class MegaDepthDataset(Dataset):
@@ -68,8 +79,13 @@ class MegaDepthDataset(Dataset):
         (idx0, idx1), overlap_score, central_matches = self.pair_infos[idx]
 
         # read grayscale image and mask. (1, h, w) and (h, w)
-        img_name0 = osp.join(self.root_dir, self.scene_info['image_paths'][idx0])
-        img_name1 = osp.join(self.root_dir, self.scene_info['image_paths'][idx1])
+        if os.getenv('IN_BITAHUB') is not None:
+            img_name0 = get_bitahub_path(self.scene_info['image_paths'][idx0])
+            img_name1 = get_bitahub_path(self.scene_info['image_paths'][idx1])
+        else:
+            # read grayscale image and mask. (1, h, w) and (h, w)
+            img_name0 = osp.join(self.root_dir, self.scene_info['image_paths'][idx0])
+            img_name1 = osp.join(self.root_dir, self.scene_info['image_paths'][idx1])
         
         # TODO: Support augmentation & handle seeds for each worker correctly.
         image0, mask0, scale0 = read_megadepth_gray(
@@ -81,10 +97,16 @@ class MegaDepthDataset(Dataset):
 
         # read depth. shape: (h, w)
         if self.mode in ['train', 'val']:
-            depth0 = read_megadepth_depth(
-                osp.join(self.root_dir, self.scene_info['depth_paths'][idx0]), pad_to=self.depth_max_size)
-            depth1 = read_megadepth_depth(
-                osp.join(self.root_dir, self.scene_info['depth_paths'][idx1]), pad_to=self.depth_max_size)
+            if os.getenv('IN_BITAHUB') is not None:
+                depth0 = read_megadepth_depth(
+                    get_bitahub_path(self.scene_info['depth_paths'][idx0]), pad_to=self.depth_max_size)
+                depth1 = read_megadepth_depth(
+                    get_bitahub_path(self.scene_info['depth_paths'][idx1]), pad_to=self.depth_max_size)
+            else:
+                depth0 = read_megadepth_depth(
+                    osp.join(self.root_dir, self.scene_info['depth_paths'][idx0]), pad_to=self.depth_max_size)
+                depth1 = read_megadepth_depth(
+                    osp.join(self.root_dir, self.scene_info['depth_paths'][idx1]), pad_to=self.depth_max_size)
         else:
             depth0 = depth1 = torch.tensor([])
 
