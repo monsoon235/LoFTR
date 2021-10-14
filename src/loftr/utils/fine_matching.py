@@ -53,8 +53,7 @@ class FineMatching(nn.Module):
 
             # compute coordinates from heatmap
             pos1 = data['pos1']  # [m, k, 2]
-            coords_normalized = pos1 / self.W
-            coords_normalized = (coords_normalized / (self.W - 1) - 0.5) * 2
+            coords_normalized = (pos1 / (self.W - 1) - 0.5) * 2
             coords_normalized = coords_normalized * heatmap.unsqueeze(2)
             coords_normalized = coords_normalized.sum(dim=1)  # [m, 2]
             grid_normalized = pos1
