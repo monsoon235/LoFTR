@@ -121,72 +121,47 @@ class LocalFeatureTransformer(nn.Module):
             C = feat0.size(2)
             K = self.top_k
 
-            # 选取 top k 个 点做 attention
-            conf_matrix_00 = get_conf_matrix(feat0, feat0, mask0, mask0)  # [N, L, L]
-            conf_matrix_11 = get_conf_matrix(feat1, feat1, mask1, mask1)  # [N, S, S]
-            conf_matrix_01 = get_conf_matrix(feat0, feat1, mask0, mask1)  # [N, L, S]
-            conf_matrix_10 = conf_matrix_01.transpose(1, 2)  # [N,S,L]
 
             # 只对大于阈值的点做 attention
-
-            # def select2(feat: torch.Tensor, conf_matrix: torch.Tensor) -> torch.Tensor:
-            #     n, l, c = feat.size()
-            #     _, s, _ = conf_matrix.size()
-            #     k = K
-            #     # 选择存在大于阈值的匹配的点
-            #     conf_mask: torch.Tensor = conf_matrix.max(dim=2) >= self.top_k_thr  # [N, S]
-            #     # 计算不同 N 下的 S‘
-            #     S_thr = conf_mask.sum(dim=1)
-            #     S_end = torch.cumsum(S_thr, dim=0)
-            #     S_beg = S_end - S_thr[0]
-            #     feat_selected = torch.empty(size=[n, torch.sum(S_thr), k, c], dtype=feat.dtype, device=feat.device,
-            #                                 requires_grad=feat.requires_grad)  # [N, sum(S'), K, C]
-            #     for b in range(n):
-            #         ss = S_end[b] - S_beg[b]  # S'
-            #         conf_matrix_real = conf_matrix[b][:, conf_mask[b]]  # [ss, L]
-            #         _, index = torch.topk(conf_matrix_real, k, dim=1)  # [ss, K]
-            #         feat_selected[b, S_beg[b]:S_end[b]] = torch.gather(
-            #             input=feat[b].as_strided(size=[ss, l, c], stride=[0, c, 1]),
-            #             dim=2,
-            #             index=index.as_strided(size=[ss, k, c], stride=[k, 1, 0])
-            #         )
-
             # 使用 as_stride 加速
             def select(feat: torch.Tensor, conf_matrix: torch.Tensor) -> torch.Tensor:
                 _, index = torch.topk(conf_matrix, K, dim=2)
                 n, l, c = feat.size()
                 _, s, k = index.size()
+                # torch.gather 显存占用高
                 return torch.gather(
                     input=feat.as_strided(size=[n, s, l, c], stride=[l * c, 0, c, 1]),
                     dim=2,
                     index=index.as_strided(size=[n, s, k, c], stride=[s * k, k, 1, 0])
                 )  # [n, s, k, c]
 
-            feat0_flatten = feat0.view(N * L, 1, C)
-            feat1_flatten = feat1.view(N * S, 1, C)
-            mask0_flatten = mask0.view(N * L, 1)
-            mask1_flatten = mask1.view(N * S, 1)
-            feat0_select_00 = select(feat0, conf_matrix_00).view(N * L, K, C)
-            feat0_select_10 = select(feat0, conf_matrix_10).view(N * S, K, C)
-            feat1_select_01 = select(feat1, conf_matrix_01).view(N * L, K, C)
-            feat1_select_11 = select(feat1, conf_matrix_11).view(N * S, K, C)
-
             # [N*L, 1, C] 与 [N*L, K, C] 做 attention
             # [N*S, 1, C] 与 [N*S, K, C] 做 attention
 
+            mask0_flatten = mask0.view(N * L, 1)
+            mask1_flatten = mask1.view(N * S, 1)
+
             for layer, name in zip(self.layers, self.layer_names):
 
+                feat0_flatten = feat0.view(N * L, 1, C)
+                feat1_flatten = feat1.view(N * S, 1, C)
+
                 if name == 'self':
-                    feat0_flatten = layer(feat0_flatten, feat0_select_00, mask0_flatten, None)
-                    feat1_flatten = layer(feat1_flatten, feat1_select_11, mask1_flatten, None)
+                    conf_matrix_00 = get_conf_matrix(feat0, feat0, mask0, mask0)  # [N, L, L]
+                    conf_matrix_11 = get_conf_matrix(feat1, feat1, mask1, mask1)  # [N, S, S]
+                    feat0_select_00 = select(feat0, conf_matrix_00).view(N * L, K, C)
+                    feat1_select_11 = select(feat1, conf_matrix_11).view(N * S, K, C)
+                    feat0 = layer(feat0_flatten, feat0_select_00, mask0_flatten, None).view(N, L, C)
+                    feat1 = layer(feat1_flatten, feat1_select_11, mask1_flatten, None).view(N, S, C)
                 elif name == 'cross':
-                    feat0_flatten = layer(feat0_flatten, feat1_select_01, mask0_flatten, None)
-                    feat1_flatten = layer(feat1_flatten, feat0_select_10, mask1_flatten, None)
+                    conf_matrix_01 = get_conf_matrix(feat0, feat1, mask0, mask1)  # [N, L, S]
+                    conf_matrix_10 = conf_matrix_01.transpose(1, 2)  # [N,S,L]
+                    feat1_select_01 = select(feat1, conf_matrix_01).view(N * L, K, C)
+                    feat0_select_10 = select(feat0, conf_matrix_10).view(N * S, K, C)
+                    feat0 = layer(feat0_flatten, feat1_select_01, mask0_flatten, None).view(N, L, C)
+                    feat1 = layer(feat1_flatten, feat0_select_10, mask1_flatten, None).view(N, S, C)
                 else:
                     raise KeyError
-
-            feat0 = feat0_flatten.view(N, L, C)
-            feat1 = feat1_flatten.view(N, S, C)
 
         else:
 
