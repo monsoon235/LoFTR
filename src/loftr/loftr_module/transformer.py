@@ -2,6 +2,7 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 
 from .linear_attention import LinearAttention, FullAttention
 
@@ -121,18 +122,35 @@ class LocalFeatureTransformer(nn.Module):
             C = feat0.size(2)
             K = self.top_k
 
-
             # 只对大于阈值的点做 attention
             # 使用 as_stride 加速
             def select(feat: torch.Tensor, conf_matrix: torch.Tensor) -> torch.Tensor:
                 _, index = torch.topk(conf_matrix, K, dim=2)
                 n, l, c = feat.size()
                 _, s, k = index.size()
-                # torch.gather 显存占用高
+
+                # 尝试 grid_sample
+
+                # feat_in = feat.as_strided(size=[n, s, l, c], stride=feat.stride()[:1] + (0,) + feat.stride()[1:])
+                # feat_in = rearrange(feat_in, 'n s l c -> (n s) c l')
+                # feat_in = feat_in.unsqueeze(-1)  # [(n*s, c, l, 1]
+                #
+                # index_in = rearrange(index, 'n s k -> (n s) k')
+                # index_in = index_in.unsqueeze(-1)  # [n*s, k, 1]
+                # zeros = torch.zeros_like(index_in)
+                # index_in = torch.stack([index_in, zeros], dim=-1)  # [n*s, k, 1, 2]
+                #
+                # selected = F.grid_sample(feat_in, index_in.to(dtype=feat_in.dtype))  # [n*s, c, k, 1]
+                # selected = selected.squeeze(-1)  # [n*s, c, k]
+                # selected = rearrange(selected, '(n s) c k -> n s k c', n=n)
+
+                # return selected
+
+                # # torch.gather 显存占用高
                 return torch.gather(
-                    input=feat.as_strided(size=[n, s, l, c], stride=[l * c, 0, c, 1]),
+                    input=feat.as_strided(size=[n, s, l, c], stride=feat.stride()[:1] + (0,) + feat.stride()[1:]),
                     dim=2,
-                    index=index.as_strided(size=[n, s, k, c], stride=[s * k, k, 1, 0])
+                    index=index.as_strided(size=[n, s, k, c], stride=index.stride() + (0,))
                 )  # [n, s, k, c]
 
             # [N*L, 1, C] 与 [N*L, K, C] 做 attention
