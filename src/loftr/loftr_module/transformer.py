@@ -94,10 +94,11 @@ class LocalFeatureTransformer(nn.Module):
     def pad_split(self, tensor: torch.Tensor, h: int, w: int, ws: int) -> torch.Tensor:
         n, _, c = tensor.shape
         tensor_hw = rearrange(tensor, 'n (h w) c -> n c h w', h=h, w=w)
-        if h % ws != 0 or w % ws != 0:
-            pad = ((w % ws) // 2, (w % ws) - (w % ws) // 2,
-                   (h % ws) // 2, (h % ws) - (h % ws) // 2)
-            tensor_hw = F.pad(tensor, pad=pad, mode='constant', value=0)
+        h_rest = ws * math.ceil(h / ws) - h
+        w_rest = ws * math.ceil(w / ws) - w
+        if h_rest != 0 or w_rest != 0:
+            pad = (w_rest // 2, w_rest - w_rest // 2, h_rest // 2, h_rest - h_rest // 2)
+            tensor_hw = F.pad(tensor_hw, pad=pad, mode='constant', value=0)
         size = (n, c, tensor_hw.shape[2] // ws, tensor_hw.shape[3] // ws, ws, ws)
         stride = (tensor_hw.stride(0), tensor_hw.stride(1),
                   ws * tensor_hw.stride(2), ws * tensor_hw.stride(3),
@@ -126,12 +127,12 @@ class LocalFeatureTransformer(nn.Module):
         # 如果某个区域内所有像素都被 mask，则它也被 mask
         mask_win_rep = torch.any(mask_split, dim=2)  # [n, wn]
 
-        # feat_split_class_sim = torch.masked_fill(feat_split_class_sim, ~mask_split[:, :, :, None],
-        #                                          value=-math.inf)  # 排除被 mask 的元素
-        # feat_split_class_sim = torch.masked_fill(feat_split_class_sim, ~mask_win_rep[:, :, None, None],
-        #                                          value=0)  # 避免计算时出现 nan
         feat_class_heatmap = torch.softmax(feat_split_class_sim, dim=3)  # [n, wn, wsws, cn]
-        feat_class_avg = torch.mean(feat_class_heatmap, dim=2)  # [n, wn, cn]
+        # 需要排除被 mask 的元素，计算平均数时也要考虑 mask
+        feat_class_heatmap = torch.masked_fill(feat_class_heatmap, ~mask_split[:, :, :, None], value=0)
+        valid_token_num = mask_split.sum(dim=2, dtype=torch.int16)  # [n, wn]
+        valid_token_num = torch.masked_fill(valid_token_num, valid_token_num == 0, value=2**15-1)
+        feat_class_avg = feat_class_heatmap.sum(dim=2) / valid_token_num[:, :, None]  # [n, wn, cn]
         feat_class = torch.argmax(feat_class_heatmap, dim=3)  # [n, wn, wsws]
 
         prototype = self.classify_conv.weight.squeeze(2)  # [cn, c]
@@ -213,13 +214,13 @@ class LocalFeatureTransformer(nn.Module):
     def fold_clip_flatten(self, feat_split_flatten: torch.Tensor, h: int, w: int, n: int) -> torch.Tensor:
         ws = self.window_size
         feat_split = rearrange(feat_split_flatten, '(n wn) wsws c -> n (c wsws) wn', n=n)
-        h_o = ws * (h // ws) + (h % ws)
-        w_o = ws * (w // ws) + (w % ws)
-        feat = F.fold(feat_split, output_size=(h_o, w_o), kernel_size=ws, stride=ws)  # [n, c, h_o, w_o]
-        if h % ws != 0:
-            feat = feat[:, :, (h % ws) // 2: -((h % ws) - (h % ws) // 2), :]  # [n, c, h, w]
-        if w % ws != 0:
-            feat = feat[:, :, :, (w % ws) // 2:-((w % ws) - (w % ws) // 2)]  # [n, c, h, w]
+        h_rest = ws * math.ceil(h / ws) - h
+        w_rest = ws * math.ceil(w / ws) - w
+        feat = F.fold(feat_split, output_size=(h + h_rest, w + w_rest), kernel_size=ws, stride=ws)  # [n, c, h_o, w_o]
+        if h_rest != 0:
+            feat = feat[:, :, h_rest // 2: -(h_rest - h_rest // 2), :]  # [n, c, h, w]
+        if w_rest != 0:
+            feat = feat[:, :, :, w_rest // 2: -(w_rest - w_rest // 2)]  # [n, c, h, w]
 
         return rearrange(feat, 'n c h w -> n (h w) c')
 
