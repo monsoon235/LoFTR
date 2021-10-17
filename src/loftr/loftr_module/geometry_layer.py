@@ -36,7 +36,9 @@ def get_anchors(matches: List[torch.Tensor], anchor_num: int,
     for b in range(bs):
         matches_b = matches[b]
         ms = matches_b.size(0)
-        if mconf is None:  # 随机采样
+        if ms == 0:
+            anchors_b = torch.zeros(size=(anchor_num, 2, 2), dtype=matches_b.dtype, device=matches_b.device)
+        elif mconf is None:  # 随机采样
             if ms >= anchor_num:
                 anchors_select = random.sample([m for m in matches_b], k=anchor_num)
                 anchors_b = torch.stack(anchors_select, dim=0)
