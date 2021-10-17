@@ -5,6 +5,7 @@ import cv2
 import torch
 import torch.nn as nn
 import random
+import numpy as np
 
 from ..utils.coarse_matching import CoarseMatching
 
@@ -71,6 +72,8 @@ def get_warped_pos(pos: torch.Tensor, transform_matrix: torch.Tensor) -> torch.T
     pos_in = torch.cat([pos, torch.ones([pos.size(0), pos.size(1), 1], dtype=pos.dtype, device=pos.device)], dim=2)
     pos_out = torch.einsum('bcd,bld->blc', transform_matrix, pos_in)
     pos_warped = pos_out[:, :, :2] / pos_out[:, :, 2:3]
+    assert not torch.any(torch.isnan(pos_warped)), f'NaN detected! {pos_warped}'
+    assert not torch.any(torch.isinf(pos_warped)), f'Inf detected! {pos_warped}'
     return pos_warped
 
 
@@ -93,7 +96,7 @@ class GeometryLayer(nn.Module):
         self.max_coord_dist = config['max_coord_dist']
         self.feat_channels = feat_channels
         self.conv = nn.Conv1d(in_channels=feat_channels + 2 * self.anchor_num, out_channels=feat_channels,
-                              kernel_size=1, stride=1)
+                              kernel_size=(1,), stride=(1,))
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -141,10 +144,6 @@ class GeometryLayer(nn.Module):
             b_ids_gt = data['spv_b_ids']
             i_ids_gt = data['spv_i_ids']
             j_ids_gt = data['spv_j_ids']
-            # 检查每个 batch 是否至少有 4 个匹配，否则不做处理
-            for b in range(bs):
-                if (b_ids_gt == b).sum() < 4:
-                    return self.get_coord_dist_no_enough_matches(feat0, feat1)
             matches = get_matches(b_ids_gt, i_ids_gt, j_ids_gt, hw0_c, hw1_c, bs=bs)  # bs x [M, 2, 2]
             anchors = get_anchors(matches, anchor_num=self.anchor_num)  # [bs, anchor_num, 2, 2]
         else:
@@ -153,10 +152,6 @@ class GeometryLayer(nn.Module):
             i_ids = data_copy['i_ids']
             j_ids = data_copy['j_ids']
             mconf = data_copy['mconf']
-            # 检查每个 batch 是否至少有 4 个匹配，否则不做处理
-            for b in range(bs):
-                if (b_ids == b).sum() < 4:
-                    return self.get_coord_dist_no_enough_matches(feat0, feat1)
             matches = get_matches(b_ids, i_ids, j_ids, hw0_c, hw1_c, bs=bs)
             anchors = get_anchors(matches, anchor_num=self.anchor_num, mconf=mconf, b_ids=b_ids)
         anchors = anchors.to(dtype=_dtype)
@@ -177,16 +172,24 @@ class GeometryLayer(nn.Module):
             transform_matrix_by_b = []
             for b in range(bs):
                 m = matches[b].detach().cpu().numpy()
-                if self.training and self.use_gt_matches_in_training:
-                    # 训练时用最小二乘法
-                    transform_matrix_b, _ = cv2.findHomography(srcPoints=m[:, 0, :], dstPoints=m[:, 1, :], method=0)
+                if m.shape[0] < 4:
+                    transform_matrix_b = torch.eye(3, dtype=_dtype, device=_device)
                 else:
-                    # 测试时使用 RANSAC 算法
-                    transform_matrix_b, _ = cv2.findHomography(srcPoints=m[:, 0, :], dstPoints=m[:, 1, :],
-                                                               method=cv2.RANSAC)
-                if transform_matrix_b is None:
-                    return self.get_coord_dist_no_enough_matches(feat0, feat1)
-                transform_matrix_b = torch.tensor(transform_matrix_b, dtype=_dtype, device=_device)
+                    if self.training and self.use_gt_matches_in_training:
+                        # 训练时用最小二乘法
+                        transform_matrix_b_np, _ = cv2.findHomography(srcPoints=m[:, 0, :], dstPoints=m[:, 1, :],
+                                                                      method=0)
+                    else:
+                        # 测试时使用 RANSAC 算法
+                        transform_matrix_b_np, _ = cv2.findHomography(srcPoints=m[:, 0, :], dstPoints=m[:, 1, :],
+                                                                      method=cv2.RANSAC)
+                    # 如果 transform_matrix 为 None，或者包含 inf nan，则忽略
+                    if transform_matrix_b_np is None \
+                            or np.any(np.isnan(transform_matrix_b_np)) \
+                            or np.any(np.isinf(transform_matrix_b_np)):
+                        transform_matrix_b = torch.eye(3, dtype=_dtype, device=_device)
+                    else:
+                        transform_matrix_b = torch.tensor(transform_matrix_b_np, dtype=_dtype, device=_device)
                 transform_matrix_by_b.append(transform_matrix_b)
             transform_matrix = torch.stack(transform_matrix_by_b, dim=0)  # [bs, 3, 3]
 
@@ -198,15 +201,30 @@ class GeometryLayer(nn.Module):
             # 归一化
             img0_coord_dist[:, :, :, 0] /= hw1_c[0]  # 归一化也是用 img1 的尺度
             img0_coord_dist[:, :, :, 1] /= hw1_c[1]
+
+            data.update({
+                'anchors0_warped': anchors0_warped,
+                'transform_matrix': transform_matrix,
+            })
+
         else:
+
             img0_coord_dist = calc_anchor_coord_dist_map(anchors[:, :, 0, :], feat0_pos)
             # 归一化
             img0_coord_dist[:, :, :, 0] /= hw0_c[0]
             img0_coord_dist[:, :, :, 1] /= hw0_c[1]
 
+            data.update({
+                'anchors0': anchors[:, :, 0, :],
+            })
+
         img1_coord_dist = calc_anchor_coord_dist_map(anchors[:, :, 1, :], feat1_pos)
         img1_coord_dist[:, :, :, 0] /= hw1_c[0]
         img1_coord_dist[:, :, :, 1] /= hw1_c[1]
+
+        data.update({
+            'anchors1': anchors[:, :, 1, :],
+        })
 
         # FIXME: warp 方式导致 img0_coord_dist 过大，训练时出现 NaN
         # FIXME: 暂时使用裁剪坐标范围的方式缓解问题
@@ -239,19 +257,7 @@ class GeometryLayer(nn.Module):
         feat0_in = torch.cat([feat0, img0_coord_dist], dim=2).transpose(1, 2)
         feat1_in = torch.cat([feat1, img1_coord_dist], dim=2).transpose(1, 2)
 
-        # print('===== DEBUG BEGIN =====')
-        #
-        # print('feat0 max =', feat0.abs().max())
-        # print('feat1 max =', feat1.abs().max())
-        # print('img0_coord_dist max =', img0_coord_dist.abs().max())
-        # print('img1_coord_dist max =', img1_coord_dist.abs().max())
-        #
         feat0 = self.conv(feat0_in).transpose(1, 2)
         feat1 = self.conv(feat1_in).transpose(1, 2)
-        #
-        # print('feat0 conv max =', feat0.abs().max())
-        # print('feat1 conv max =', feat1.abs().max())
-        #
-        # print('====== DEBUG END =====')
 
         return feat0, feat1
