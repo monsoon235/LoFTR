@@ -216,15 +216,12 @@ class GeometryLayer(nn.Module):
             img0_coord_dist[:, :, :, 0] /= hw0_c[0]
             img0_coord_dist[:, :, :, 1] /= hw0_c[1]
 
-            data.update({
-                'anchors0': anchors[:, :, 0, :],
-            })
-
         img1_coord_dist = calc_anchor_coord_dist_map(anchors[:, :, 1, :], feat1_pos)
         img1_coord_dist[:, :, :, 0] /= hw1_c[0]
         img1_coord_dist[:, :, :, 1] /= hw1_c[1]
 
         data.update({
+            'anchors0': anchors[:, :, 0, :],
             'anchors1': anchors[:, :, 1, :],
         })
 
