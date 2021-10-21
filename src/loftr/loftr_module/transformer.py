@@ -21,6 +21,7 @@ class ModifiedDETRDecoder(nn.Module):
         self.prototype_q_proj = nn.Linear(d_model, d_model, bias=False)
         self.prototype_k_proj = nn.Linear(d_model, d_model, bias=False)
         self.prototype_v_proj = nn.Linear(d_model, d_model, bias=False)
+        self.prototype_merge = nn.Linear(d_model, d_model, bias=False)
         self.norm2 = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
             nn.Linear(d_model, d_model, bias=False),
@@ -35,17 +36,23 @@ class ModifiedDETRDecoder(nn.Module):
         query_q = self.query_q_proj(query).view(bs, -1, self.n_head, self.n_dim)
         query_k = self.query_k_proj(query).view(bs, -1, self.n_head, self.n_dim)
         query_v = self.query_v_proj(query).view(bs, -1, self.n_head, self.n_dim)
-        message = self.query_self_attention(query_q, query_k, query_v, query_mask, query_mask) \
-            .view(bs, -1, self.n_head * self.n_dim)
+        message = self.query_self_attention(query_q, query_k, query_v, query_mask, query_mask)
+        message = message.view(bs, -1, self.n_head * self.n_dim)
+        message = self.query_merge(message)
+
         message = self.norm1(query + message)
+
         message_q = self.prototype_q_proj(message).view(bs, -1, self.n_head, self.n_dim)
         feat_k = self.prototype_k_proj(feat).view(bs, -1, self.n_head, self.n_dim)
         feat_v = self.prototype_v_proj(feat).view(bs, -1, self.n_head, self.n_dim)
-        prototype = self.prototype_extractor_attention(message_q, feat_k, feat_v, query_mask, feat_mask) \
-            .view(bs, -1, self.n_head * self.n_dim)
+        prototype = self.prototype_extractor_attention(message_q, feat_k, feat_v, query_mask, feat_mask)
+        prototype = prototype.view(bs, -1, self.n_head * self.n_dim)
+        prototype = self.prototype_merge(prototype)
+
         prototype = self.norm2(message + prototype)
         prototype_ffn = self.ffn(prototype)
         prototype = self.norm3(prototype + prototype_ffn)
+
         return prototype
 
 
@@ -74,7 +81,11 @@ class PrototypeExtractor(nn.Module):
             prototype = torch.einsum('nlc,nlk->nkc', feat, heatmap)
             return prototype
         elif self.type == 'detr':
-            return self.decoder(self.query.weight, feat, query_mask=None, feat_mask=mask)
+            query_in = self.query.weight.as_strided(
+                size=(feat.size(0),) + self.query.weight.size(),
+                stride=(0,) + self.query.weight.stride(),
+            )
+            return self.decoder(query_in, feat, query_mask=None, feat_mask=mask)
         else:
             raise KeyError
 
@@ -84,7 +95,7 @@ class LoFTREncoderLayer(nn.Module):
                  d_model,
                  nhead,
                  attention='linear',
-                 num_prototype=0,
+                 num_prototype: int = 0,
                  prototype_extractor_type: str = 'detr'):
         super(LoFTREncoderLayer, self).__init__()
 
@@ -105,11 +116,7 @@ class LoFTREncoderLayer(nn.Module):
             self.kp_proj = nn.Linear(d_model, d_model, bias=False)
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.attention = LinearAttention() if attention == 'linear' else FullAttention()
-
-        if self.use_prototype:
-            self.merge = nn.Linear(num_prototype, d_model, bias=False)
-        else:
-            self.merge = nn.Linear(d_model, d_model, bias=False)
+        self.merge = nn.Linear(d_model, d_model, bias=False)
 
         # feed-forward network
         self.mlp = nn.Sequential(
@@ -135,11 +142,14 @@ class LoFTREncoderLayer(nn.Module):
 
         # multi-head attention
         if self.use_prototype:
+
             query = self.q_proj(query)
             key = self.k_proj(key)
+
             prototype = self.prototype_extractor(x, x_mask)
             prototype_p = self.qp_proj(prototype)
             prototype_k = self.kp_proj(prototype)
+
             assert self.num_prototype % self.nhead == 0
             query = torch.einsum('nlc,nkc->nlk', query, prototype_p)
             key = torch.einsum('nsc,nkc->nsk', key, prototype_k)
@@ -147,9 +157,13 @@ class LoFTREncoderLayer(nn.Module):
             # TODO: OT or DS
             # 暂时先使用 DS
             query = torch.masked_fill(query, ~x_mask[:, :, None], value=-math.inf)
-            query = torch.softmax(query, dim=1) * torch.softmax(query, dim=2)
+            query = torch.softmax(query, dim=1) * torch.nan_to_num(torch.softmax(query, dim=2), nan=0)
+            # if torch.any(torch.isnan(query)):
+            #     print('break')
             key = torch.masked_fill(key, ~source_mask[:, :, None], value=-math.inf)
-            key = torch.softmax(key, dim=1) * torch.softmax(key, dim=2)
+            key = torch.softmax(key, dim=1) * torch.nan_to_num(torch.softmax(key, dim=2), nan=0)
+            # if torch.any(torch.isnan(key)):
+            #     print('break')
 
             query = query.view(bs, -1, self.nhead, self.num_prototype // self.nhead)
             key = key.view(bs, -1, self.nhead, self.num_prototype // self.nhead)
@@ -160,11 +174,7 @@ class LoFTREncoderLayer(nn.Module):
         value = self.v_proj(value).view(bs, -1, self.nhead, self.dim)
 
         message = self.attention(query, key, value, q_mask=x_mask, kv_mask=source_mask)  # [N, L, (H, D)]
-
-        if self.use_prototype:
-            message = self.merge(message.view(bs, -1, self.num_prototype))
-        else:
-            message = self.merge(message.view(bs, -1, self.nhead * self.dim))  # [N, L, C]
+        message = self.merge(message.view(bs, -1, self.nhead * self.dim))  # [N, L, C]
 
         message = self.norm1(message)
 
@@ -186,7 +196,7 @@ class LocalFeatureTransformer(nn.Module):
         self.nhead = config['nhead']
         self.layer_names = config['layer_names']
         encoder_layer = LoFTREncoderLayer(config['d_model'], config['nhead'], config['attention'],
-                                          num_prototype=config['num_prototype'])
+                                          config.get('num_prototype', 0))
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
         self._reset_parameters()
 
