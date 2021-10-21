@@ -5,6 +5,7 @@ from einops.einops import rearrange
 
 INF = 1e9
 
+
 def mask_border(m, b: int, v):
     """ Mask borders with value
     Args:
@@ -84,6 +85,14 @@ class CoarseMatching(nn.Module):
         else:
             raise NotImplementedError()
 
+        self.use_group_sim = 'num_group' in config and config['num_group'] > 0
+
+        if self.use_group_sim:
+            self.num_group = config['num_group']
+            self.num_feat_c = config['num_feat_c']
+            assert self.num_feat_c % self.num_group == 0
+            self.weight_linear = nn.Linear(self.num_feat_c // self.num_group, 1)
+
     def forward(self, feat_c0, feat_c1, data, mask_c0=None, mask_c1=None):
         """
         Args:
@@ -106,12 +115,23 @@ class CoarseMatching(nn.Module):
         N, L, S, C = feat_c0.size(0), feat_c0.size(1), feat_c1.size(1), feat_c0.size(2)
 
         # normalize
-        feat_c0, feat_c1 = map(lambda feat: feat / feat.shape[-1]**.5,
+        feat_c0, feat_c1 = map(lambda feat: feat / feat.shape[-1] ** .5,
                                [feat_c0, feat_c1])
 
+        if self.use_group_sim:
+            feat_c0_grouped = feat_c0.view(N, L, self.num_group, C // self.num_group)
+            feat_c1_grouped = feat_c1.view(N, S, self.num_group, C // self.num_group)
+            feat_c0_weight = self.weight_linear(feat_c0_grouped).squeeze(-1)
+            feat_c1_weight = self.weight_linear(feat_c1_grouped).squeeze(-1)
+            sim_matrix_grouped = torch.einsum('nlgd,nsgd->nlsg', feat_c0_grouped, feat_c1_grouped)
+            sim_matrix_weight = torch.einsum('nlg,nsg->nlsg', feat_c0_weight, feat_c1_weight)
+            sim_matrix_weight = torch.softmax(sim_matrix_weight, dim=3)
+            sim_matrix = torch.einsum('nlsg,nlsg->nls', sim_matrix_grouped, sim_matrix_weight)
+        else:
+            sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1)
+
         if self.match_type == 'dual_softmax':
-            sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0,
-                                      feat_c1) / self.temperature
+            sim_matrix /= self.temperature
             if mask_c0 is not None:
                 sim_matrix.masked_fill_(
                     ~(mask_c0[..., None] * mask_c1[:, None]).bool(),
@@ -120,7 +140,6 @@ class CoarseMatching(nn.Module):
 
         elif self.match_type == 'sinkhorn':
             # sinkhorn, dustbin included
-            sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1)
             if mask_c0 is not None:
                 sim_matrix[:, :L, :S].masked_fill_(
                     ~(mask_c0[..., None] * mask_c1[:, None]).bool(),
@@ -185,8 +204,8 @@ class CoarseMatching(nn.Module):
 
         # 2. mutual nearest
         mask = mask \
-            * (conf_matrix == conf_matrix.max(dim=2, keepdim=True)[0]) \
-            * (conf_matrix == conf_matrix.max(dim=1, keepdim=True)[0])
+               * (conf_matrix == conf_matrix.max(dim=2, keepdim=True)[0]) \
+               * (conf_matrix == conf_matrix.max(dim=1, keepdim=True)[0])
 
         # 3. find all valid coarse matches
         # this only works when at most one `True` in each row
@@ -218,15 +237,15 @@ class CoarseMatching(nn.Module):
             else:
                 pred_indices = torch.randint(
                     num_matches_pred,
-                    (num_matches_train - self.train_pad_num_gt_min, ),
+                    (num_matches_train - self.train_pad_num_gt_min,),
                     device=_device)
 
             # gt_pad_indices is to select from gt padding. e.g. max(3787-4800, 200)
             gt_pad_indices = torch.randint(
-                    len(data['spv_b_ids']),
-                    (max(num_matches_train - num_matches_pred,
-                        self.train_pad_num_gt_min), ),
-                    device=_device)
+                len(data['spv_b_ids']),
+                (max(num_matches_train - num_matches_pred,
+                     self.train_pad_num_gt_min),),
+                device=_device)
             mconf_gt = torch.zeros(len(data['spv_b_ids']), device=_device)  # set conf of gt paddings to all zero
 
             b_ids, i_ids, j_ids, mconf = map(
