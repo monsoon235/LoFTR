@@ -33,6 +33,9 @@ def build_profiler(name):
     elif name == 'pytorch':
         from pytorch_lightning.profiler import PyTorchProfiler
         return PyTorchProfiler(use_cuda=True, profile_memory=True, row_limit=100)
+    elif name == 'advanced':
+        from pytorch_lightning.profiler import AdvancedProfiler
+        return AdvancedProfiler()
     elif name is None:
         return PassThroughProfiler()
     else:
