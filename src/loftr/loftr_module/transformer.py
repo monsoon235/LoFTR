@@ -196,7 +196,8 @@ class LocalFeatureTransformer(nn.Module):
         self.nhead = config['nhead']
         self.layer_names = config['layer_names']
         encoder_layer = LoFTREncoderLayer(config['d_model'], config['nhead'], config['attention'],
-                                          config.get('num_prototype', 0))
+                                          config.get('num_prototype', 0),
+                                          config.get('prototype_extractor_type', 'detr'))
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for _ in range(len(self.layer_names))])
         self._reset_parameters()
 
