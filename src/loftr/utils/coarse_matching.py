@@ -119,13 +119,13 @@ class CoarseMatching(nn.Module):
                                [feat_c0, feat_c1])
 
         if self.use_group_sim:
-            feat_c0_grouped = feat_c0.view(N, L, self.num_group, C // self.num_group)
-            feat_c1_grouped = feat_c1.view(N, S, self.num_group, C // self.num_group)
+            feat_c0_grouped = feat_c0.view(N, L, self.num_group, C // self.num_group)  # [N, L, G, D]
+            feat_c1_grouped = feat_c1.view(N, S, self.num_group, C // self.num_group)  # [N, S, G, D]
             feat_c0_weight = self.weight_linear(feat_c0_grouped).squeeze(-1)
             feat_c1_weight = self.weight_linear(feat_c1_grouped).squeeze(-1)
             sim_matrix_grouped = torch.einsum('nlgd,nsgd->nlsg', feat_c0_grouped, feat_c1_grouped)
             sim_matrix_weight = torch.einsum('nlg,nsg->nlsg', feat_c0_weight, feat_c1_weight)
-            sim_matrix_weight = torch.softmax(sim_matrix_weight, dim=3)
+            sim_matrix_weight = torch.softmax(sim_matrix_weight, dim=3) * self.num_group
             sim_matrix = torch.einsum('nlsg,nlsg->nls', sim_matrix_grouped, sim_matrix_weight)
         else:
             sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1)
