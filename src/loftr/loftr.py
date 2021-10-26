@@ -78,4 +78,6 @@ class LoFTR(nn.Module):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
                 state_dict[k.replace('matcher.', '', 1)] = state_dict.pop(k)
-        return super().load_state_dict(state_dict, *args, **kwargs)
+        init_state_dict = self.state_dict()
+        init_state_dict.update(state_dict)
+        return super().load_state_dict(init_state_dict, *args, **kwargs)

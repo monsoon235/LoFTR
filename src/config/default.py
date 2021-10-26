@@ -26,6 +26,7 @@ _CN.LOFTR.COARSE.TEMP_BUG_FIX = True
 _CN.LOFTR.MATCH_COARSE = CN()
 _CN.LOFTR.MATCH_COARSE.NUM_FEAT_C = _CN.LOFTR.COARSE.D_MODEL
 _CN.LOFTR.MATCH_COARSE.NUM_GROUP = 8
+_CN.LOFTR.MATCH_COARSE.WEIGHT_USE_RIGHT = False
 _CN.LOFTR.MATCH_COARSE.THR = 0.2
 _CN.LOFTR.MATCH_COARSE.BORDER_RM = 2
 _CN.LOFTR.MATCH_COARSE.MATCH_TYPE = 'dual_softmax'  # options: ['dual_softmax, 'sinkhorn']
@@ -113,6 +114,9 @@ _CN.TRAINER.OPTIMIZER = "adamw"  # [adam, adamw]
 _CN.TRAINER.TRUE_LR = None  # this will be calculated automatically at runtime
 _CN.TRAINER.ADAM_DECAY = 0.  # ADAM: for adam
 _CN.TRAINER.ADAMW_DECAY = 0.1
+_CN.TRAINER.IS_FINETUNE = False
+_CN.TRAINER.SPECIAL_PARAMS_NAMES = ['matcher.coarse_matching.weight_linear']
+_CN.TRAINER.BASE_PARAMS_LR_RATIO = 0.1
 
 # step-based warm-up
 _CN.TRAINER.WARMUP_TYPE = 'linear'  # [linear, constant]

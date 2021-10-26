@@ -90,8 +90,12 @@ class CoarseMatching(nn.Module):
         if self.use_group_sim:
             self.num_group = config['num_group']
             self.num_feat_c = config['num_feat_c']
+            self.weight_use_right = config['weight_use_right']
             assert self.num_feat_c % self.num_group == 0
-            self.weight_linear = nn.Linear(self.num_feat_c // self.num_group, 1)
+            self.weight_linear = nn.Sequential(
+                nn.Linear(self.num_feat_c, self.num_feat_c // 4),
+                nn.Linear(self.num_feat_c // 4, self.num_group)
+            )
 
     def forward(self, feat_c0, feat_c1, data, mask_c0=None, mask_c1=None):
         """
@@ -121,12 +125,18 @@ class CoarseMatching(nn.Module):
         if self.use_group_sim:
             feat_c0_grouped = feat_c0.view(N, L, self.num_group, C // self.num_group)  # [N, L, G, D]
             feat_c1_grouped = feat_c1.view(N, S, self.num_group, C // self.num_group)  # [N, S, G, D]
-            feat_c0_weight = self.weight_linear(feat_c0_grouped).squeeze(-1)
-            feat_c1_weight = self.weight_linear(feat_c1_grouped).squeeze(-1)
             sim_matrix_grouped = torch.einsum('nlgd,nsgd->nlsg', feat_c0_grouped, feat_c1_grouped)
-            sim_matrix_weight = torch.einsum('nlg,nsg->nlsg', feat_c0_weight, feat_c1_weight)
-            sim_matrix_weight = torch.softmax(sim_matrix_weight, dim=3) * self.num_group
-            sim_matrix = torch.einsum('nlsg,nlsg->nls', sim_matrix_grouped, sim_matrix_weight)
+            feat_c0_weight = self.weight_linear(feat_c0)  # [N, L, G]
+            if self.weight_use_right:
+                feat_c1_weight = self.weight_linear(feat_c1)
+                sim_matrix_weight = torch.einsum('nlg,nsg->nlsg', feat_c0_weight, feat_c1_weight)
+                sim_matrix_weight = torch.sigmoid(sim_matrix_weight)
+                sim_matrix = torch.einsum('nlsg,nlsg->nls', sim_matrix_grouped, sim_matrix_weight)
+            else:
+                sim_matrix_weight = feat_c0_weight
+                sim_matrix_weight = torch.sigmoid(sim_matrix_weight)
+                sim_matrix = torch.einsum('nlsg,nlg->nls', sim_matrix_grouped, sim_matrix_weight)
+
         else:
             sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1)
 
