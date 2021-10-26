@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops.einops import rearrange
+from einops.einops import rearrange, repeat
+from einops.layers.torch import Rearrange
 
 INF = 1e9
 
@@ -92,9 +93,15 @@ class CoarseMatching(nn.Module):
             self.num_feat_c = config['num_feat_c']
             self.weight_use_right = config['weight_use_right']
             assert self.num_feat_c % self.num_group == 0
-            self.weight_linear = nn.Sequential(
-                nn.Linear(self.num_feat_c, self.num_feat_c // 4),
-                nn.Linear(self.num_feat_c // 4, self.num_group)
+            self.index_nn = nn.Sequential(
+                Rearrange('n l c -> n c l'),
+                nn.Conv1d(in_channels=self.num_feat_c, out_channels=32, kernel_size=(1,), stride=(1,)),
+                nn.BatchNorm1d(32),
+                nn.LeakyReLU(inplace=False),
+                nn.Conv1d(in_channels=32, out_channels=1, kernel_size=(1,), stride=(1,)),
+                nn.BatchNorm1d(1),
+                nn.Tanh(),
+                Rearrange('n c l -> n l c'),
             )
 
     def forward(self, feat_c0, feat_c1, data, mask_c0=None, mask_c1=None):
@@ -126,17 +133,17 @@ class CoarseMatching(nn.Module):
             feat_c0_grouped = feat_c0.view(N, L, self.num_group, C // self.num_group)  # [N, L, G, D]
             feat_c1_grouped = feat_c1.view(N, S, self.num_group, C // self.num_group)  # [N, S, G, D]
             sim_matrix_grouped = torch.einsum('nlgd,nsgd->nlsg', feat_c0_grouped, feat_c1_grouped)
-            feat_c0_weight = self.weight_linear(feat_c0)  # [N, L, G]
+            feat_c0_group_index = self.index_nn(feat_c0)  # [N, L, 1]
             if self.weight_use_right:
-                feat_c1_weight = self.weight_linear(feat_c1)
-                sim_matrix_weight = torch.einsum('nlg,nsg->nlsg', feat_c0_weight, feat_c1_weight)
-                sim_matrix_weight = torch.sigmoid(sim_matrix_weight)
-                sim_matrix = torch.einsum('nlsg,nlsg->nls', sim_matrix_grouped, sim_matrix_weight)
+                raise NotImplementedError
             else:
-                sim_matrix_weight = feat_c0_weight
-                sim_matrix_weight = torch.sigmoid(sim_matrix_weight)
-                sim_matrix = torch.einsum('nlsg,nlg->nls', sim_matrix_grouped, sim_matrix_weight)
-
+                feat_group_index = feat_c0_group_index  # [N, L, 1]
+                sim_in = rearrange(sim_matrix_grouped, 'n l s g -> n s l g')
+                l_index = torch.arange(0, L, dtype=feat_group_index.dtype, device=feat_group_index.device)  # [L]
+                l_index = repeat(l_index, 'l -> n l 1', n=N)
+                index_in = torch.stack([l_index, feat_group_index], dim=-1)  # [N, L, 1, 2]
+                sim_matrix = F.grid_sample(sim_in, index_in, align_corners=False)  # [N, S, L, 1]
+                sim_matrix = rearrange(sim_matrix, 'n s l 1 -> n l s')
         else:
             sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1)
 
