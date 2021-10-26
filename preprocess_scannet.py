@@ -6,6 +6,7 @@ import zlib
 import imageio
 import cv2
 import png
+from multiprocessing import Pool
 
 COMPRESSION_TYPE_COLOR = {-1: 'unknown', 0: 'raw', 1: 'png', 2: 'jpeg'}
 COMPRESSION_TYPE_DEPTH = {-1: 'unknown', 0: 'raw_ushort', 1: 'zlib_ushort', 2: 'occi_ushort'}
@@ -119,24 +120,34 @@ class SensorData:
         self.save_mat_to_file(self.extrinsic_depth, os.path.join(output_path, 'extrinsic_depth.txt'))
 
 
+def process(scene_name, src_dir, dst_dir):
+    sens_file_path = os.path.join(src_dir, scene_name, scene_name + '.sens')
+    sys.stdout.write('loading %s...' % sens_file_path)
+    sd = SensorData(sens_file_path)
+    sys.stdout.write('loaded!\n')
+    output_path = os.path.join(dst_dir, scene_name)
+    sd.export_depth_images(os.path.join(output_path, 'depth'))
+    sd.export_color_images(os.path.join(output_path, 'color'))
+    sd.export_poses(os.path.join(output_path, 'pose'))
+    sd.export_intrinsics(os.path.join(output_path, 'intrinsic'))
+    return '%s OK' % scene_name
+
+
 def process_scenes(src_dir, dst_dir):
-    os.makedirs(dst_dir)
+    pool = Pool(processes=8)
+    result = []
     for scene_name in os.listdir(src_dir):
-        sens_file_path = os.path.join(src_dir, scene_name, scene_name + '.sens')
-        sys.stdout.write('loading %s...' % sens_file_path)
-        sd = SensorData(sens_file_path)
-        sys.stdout.write('loaded!\n')
-        output_path = os.path.join(dst_dir, scene_name)
-        sd.export_depth_images(os.path.join(output_path, 'depth'))
-        sd.export_color_images(os.path.join(output_path, 'color'))
-        sd.export_poses(os.path.join(output_path, 'pose'))
-        sd.export_intrinsics(os.path.join(output_path, 'intrinsic'))
+        res = pool.apply_async(func=process, args=(scene_name, src_dir, dst_dir))
+        result.append(res)
+
+    for res in result:
+        res.get()
 
 
 if __name__ == '__main__':
-    scans_train_dir = '/data/monsoon/ScanNet/scans'
-    scans_test_dir = '/data/monsoon/ScanNet/scans_test'
-    output_train_dir = '/output/train'
-    output_test_dir = '/output/test'
+    scans_train_dir = 'ScanNet/scans'
+    scans_test_dir = 'ScanNet/scans_test'
+    output_train_dir = 'scannet_loftr/train'
+    output_test_dir = 'scannet_loftr/test'
     process_scenes(scans_train_dir, output_train_dir)
     process_scenes(scans_test_dir, output_test_dir)
