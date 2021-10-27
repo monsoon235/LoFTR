@@ -112,7 +112,7 @@ def _make_confidence_figure(data, b_id):
     raise NotImplementedError()
 
 
-def _make_anchors_figure(data: dict, b_id: int, dpi=75):
+def _make_anchors_figure(data: dict, b_id: int, i_id, dpi=75):
     # 绘制 anchor 点位置，如果存在 transform_matrix 则也绘制 warp 后的 anchor 点和 图像
     # 注意单应变换矩阵并不是尺度不变的，所以只能在 coarse 尺度上进行 warp
 
@@ -121,8 +121,9 @@ def _make_anchors_figure(data: dict, b_id: int, dpi=75):
 
     img0 = (data['image0'][b_id][0].cpu().numpy() * 255).round().astype(np.uint8)
     img1 = (data['image1'][b_id][0].cpu().numpy() * 255).round().astype(np.uint8)
-    anchors0 = data['anchors0'][b_id].cpu().numpy()  # [anchor_num, 2]
-    anchors1 = data['anchors1'][b_id].cpu().numpy()
+    anchors_i = data['anchors_i'][i_id][b_id].cpu().numpy()
+    anchors0 = anchors_i[:, 0, :]  # [anchor_num, 2]
+    anchors1 = anchors_i[:, 1, :]
 
     scale0 = np.array([int(hw0_i[0]) / int(hw0_c[0]), int(hw0_i[1]) / int(hw0_c[1])])  # 2
     scale1 = np.array([int(hw1_i[0]) / int(hw1_c[0]), int(hw1_i[1]) / int(hw1_c[1])])
@@ -176,8 +177,10 @@ def make_matching_figures(data, config, mode='evaluation'):
                 data, b_id,
                 alpha=config.TRAINER.PLOT_MATCHES_ALPHA)
             figures[mode].append(fig)
-            fig = _make_anchors_figure(data, b_id)
-            figures[mode].append(fig)
+            if 'anchors_i' in data:
+                for i in range(len(data['anchors_i'])):
+                    fig = _make_anchors_figure(data, b_id, i)
+                figures[mode].append(fig)
         elif mode == 'confidence':
             fig = _make_confidence_figure(data, b_id)
             figures[mode].append(fig)

@@ -210,6 +210,7 @@ class CoarseMatching(nn.Module):
                 'i_ids': i_ids,
                 'j_ids': j_ids,
                 'mconf': mconf,
+                'conf_matrix': conf_matrix,
             }
 
         # 4. Random sampling of training samples for fine-level LoFTR
