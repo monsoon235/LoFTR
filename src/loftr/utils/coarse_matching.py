@@ -138,12 +138,15 @@ class CoarseMatching(nn.Module):
                 raise NotImplementedError
             else:
                 feat_group_index = feat_c0_group_index  # [N, L, 1]
-                sim_in = rearrange(sim_matrix_grouped, 'n l s g -> n s l g')
-                l_index = torch.arange(0, L, dtype=feat_group_index.dtype, device=feat_group_index.device)  # [L]
-                l_index = repeat(l_index, 'l -> n l 1', n=N)
-                index_in = torch.stack([l_index, feat_group_index], dim=-1)  # [N, L, 1, 2]
-                sim_matrix = F.grid_sample(sim_in, index_in, align_corners=False)  # [N, S, L, 1]
-                sim_matrix = rearrange(sim_matrix, 'n s l 1 -> n l s')
+                sim_in = rearrange(sim_matrix_grouped, 'n l s g -> n 1 l s g')
+                l_index = torch.linspace(-1, 1, steps=L, dtype=feat_group_index.dtype, device=feat_group_index.device)
+                s_index = torch.linspace(-1, 1, steps=S, dtype=feat_group_index.dtype, device=feat_group_index.device)
+                l_index = repeat(l_index, 'l -> n l s 1', n=N, s=S)
+                s_index = repeat(s_index, 's -> n l s 1', n=N, l=L)
+                f_index = repeat(feat_group_index, 'n l 1 -> n l s 1', s=S)
+                index_in = torch.stack([l_index, s_index, f_index], dim=-1)  # [N, L, S, 1, 3]
+                sim_matrix = F.grid_sample(sim_in, index_in, align_corners=False)  # [N, 1, L, S, 1]
+                sim_matrix = rearrange(sim_matrix, 'n 1 l s 1 -> n l s')
         else:
             sim_matrix = torch.einsum("nlc,nsc->nls", feat_c0, feat_c1)
 

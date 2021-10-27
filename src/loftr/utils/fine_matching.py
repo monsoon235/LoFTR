@@ -74,12 +74,13 @@ class FineMatching(nn.Module):
                 raise NotImplementedError
             else:
                 feat_group_index = feat_f0_group_index  # [M, 1, 1]
-                sim_in = rearrange(sim_matrix_grouped, 'm w g -> m w 1 g')
-                l_index = torch.arange(0, 1, dtype=feat_group_index.dtype, device=feat_group_index.device)  # [1]
-                l_index = repeat(l_index, '1 -> m 1 1', m=M)
-                index_in = torch.stack([l_index, feat_group_index], dim=-1)  # [M, 1, 1, 2]
-                sim_matrix = F.grid_sample(sim_in, index_in, align_corners=False)  # [M, WW, 1, 1]
-                sim_matrix = rearrange(sim_matrix, 'm w 1 1 -> m w')
+                sim_in = rearrange(sim_matrix_grouped, 'm ww g -> m 1 ww g')
+                l_index = torch.linspace(0, 1, steps=1, dtype=feat_group_index.dtype, device=feat_group_index.device)
+                l_index = repeat(l_index, '1 -> m ww 1', m=M, ww=WW)
+                f_index = repeat(feat_group_index, 'm 1 1 -> m ww 1', ww=WW)
+                index_in = torch.stack([l_index, f_index], dim=-1)  # [M, WW, 1, 2]
+                sim_matrix = F.grid_sample(sim_in, index_in, align_corners=False)  # [M, 1, WW, 1]
+                sim_matrix = rearrange(sim_matrix, 'm 1 ww 1 -> m ww')
         else:
             sim_matrix = torch.einsum('mc,mrc->mr', feat_f0_picked, feat_f1)
 
