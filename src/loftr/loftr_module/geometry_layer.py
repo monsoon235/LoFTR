@@ -131,6 +131,7 @@ class GeometryLayer(nn.Module):
         super(GeometryLayer, self).__init__()
         self.anchor_num = config['anchor_num']
         self.matcher = CoarseMatching(config['matcher'])
+        self.use_weight = config['use_weight']
         self.use_warp = config['use_warp']
         self.use_gt_matches_in_training = config['use_gt_matches_in_training']
         self.max_coord_dist = config['max_coord_dist']
@@ -143,7 +144,8 @@ class GeometryLayer(nn.Module):
                 nn.MaxPool2d(kernel_size=self.nms_pooling_ks, stride=1),
             )
         self.geo_feat_linear = nn.Linear(in_features=3 * self.anchor_num, out_features=2 * self.anchor_num)
-        self.weight_layer = WeightLayer()
+        if self.use_weight:
+            self.weight_layer = WeightLayer()
         self.merge_linear = nn.Linear(in_features=self.feat_channels + 2 * self.anchor_num,
                                       out_features=self.feat_channels)
         self._reset_parameters()
@@ -391,13 +393,10 @@ class GeometryLayer(nn.Module):
         # TODO: 最好再回归一个单应变换矩阵
         # TODO: 尝试去掉 pos encoding
 
-        weight0, weight1 = self.weight_layer(conf_matrix)
-
-        # vis_feat0 = feat0 * weight0[:, :, 0:1]
-        # vis_feat1 = feat1 * weight1[:, :, 0:1]
-
-        geo_feat0 *= weight0
-        geo_feat1 *= weight1
+        if self.use_weight:
+            weight0, weight1 = self.weight_layer(conf_matrix)
+            geo_feat0 *= weight0
+            geo_feat1 *= weight1
 
         feat0_in = torch.cat([feat0, geo_feat0], dim=-1)
         feat1_in = torch.cat([feat1, geo_feat1], dim=-1)
