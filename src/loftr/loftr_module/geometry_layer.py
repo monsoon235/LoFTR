@@ -9,6 +9,7 @@ import random
 import numpy as np
 from einops import rearrange, repeat
 
+from .loftr_encoder import LoFTREncoderLayer
 from ..utils.coarse_matching import CoarseMatching
 
 
@@ -146,8 +147,11 @@ class GeometryLayer(nn.Module):
         self.geo_feat_linear = nn.Linear(in_features=3 * self.anchor_num, out_features=2 * self.anchor_num)
         if self.use_weight:
             self.weight_layer = WeightLayer()
+        self.geo_self_attention = LoFTREncoderLayer(d_model=2 * self.anchor_num, nhead=4)
+        self.geo_cross_attention = LoFTREncoderLayer(d_model=2 * self.anchor_num, nhead=4)
         self.merge_linear = nn.Linear(in_features=self.feat_channels + 2 * self.anchor_num,
                                       out_features=self.feat_channels)
+        self.norm = nn.LayerNorm(self.feat_channels)
         self._reset_parameters()
 
     def _reset_parameters(self):
@@ -177,20 +181,16 @@ class GeometryLayer(nn.Module):
         conf0 = torch.zeros(size=(bs, hw0_c[0], hw0_c[1]), dtype=mconf.dtype, device=mconf.device)
         conf0_flatten = rearrange(conf0, 'b h w -> b (h w)')
         conf0_flatten[b_ids, i_ids] = mconf  # 有置信度的地方赋值，其他保持 0
+        j_ids_matrix = torch.empty(size=(bs, hw0_c[0], hw0_c[1]), dtype=j_ids.dtype, device=j_ids.device)
+        j_ids_matrix_flatten = rearrange(j_ids_matrix, 'b h w -> b (h w)')
+        j_ids_matrix_flatten[b_ids, i_ids] = j_ids
         conf0 = rearrange(conf0_flatten, 'b (h w) -> b h w', h=hw0_c[0])
         conf0_nms = self.nms_pooling(conf0)
         is_matches = (conf0 > 0) & (conf0 == conf0_nms)
         is_matches_flatten = rearrange(is_matches, 'b h w -> b (h w)')
         b_ids_new, i_ids_new = torch.where(is_matches_flatten)
-        j_id_new = []
-        # 找到在右图的匹配点
-        for b_new, i_new in zip(b_ids_new, i_ids_new):
-            for b, i, j in zip(b_ids, i_ids, j_ids):
-                if b_new == b and i_new == i:
-                    j_id_new.append(j)
-                    break
-        j_id_new = torch.tensor(j_id_new, device=j_ids.device)
-        matches = self.get_matches(b_ids_new, i_ids_new, j_id_new, hw0_c, hw1_c, bs)
+        j_ids_new = j_ids_matrix_flatten[b_ids_new, i_ids_new]
+        matches = self.get_matches(b_ids_new, i_ids_new, j_ids_new, hw0_c, hw1_c, bs)
         return matches
 
     def get_anchors(self, matches: List[torch.Tensor], anchor_num: int,
@@ -386,6 +386,13 @@ class GeometryLayer(nn.Module):
         geo_feat0 = self.geo_feat_linear(geo_feat0)
         geo_feat1 = self.geo_feat_linear(geo_feat1)
 
+        geo_feat0 = self.geo_self_attention(geo_feat0, geo_feat0, mask0, mask0)
+        geo_feat1 = self.geo_self_attention(geo_feat1, geo_feat1, mask1, mask1)
+
+        geo_feat0, geo_feat1 = \
+            self.geo_cross_attention(geo_feat0, geo_feat1, mask0, mask1), \
+            self.geo_cross_attention(geo_feat1, geo_feat0, mask1, mask0)
+
         # 计算信息熵，表观特征匹配好则权重低，否则权重高
         # 采用神经网络从信息熵回归，更鲁棒，人工设定不行
         # 包括 信息熵，最大值，标准差这三个信息
@@ -403,5 +410,8 @@ class GeometryLayer(nn.Module):
 
         feat0 = self.merge_linear(feat0_in)
         feat1 = self.merge_linear(feat1_in)
+
+        feat0 = self.norm(feat0)
+        feat1 = self.norm(feat1)
 
         return feat0, feat1
