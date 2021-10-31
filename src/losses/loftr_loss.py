@@ -11,7 +11,7 @@ class LoFTRLoss(nn.Module):
         self.loss_config = config['loftr']['loss']
         self.match_type = self.config['loftr']['match_coarse']['match_type']
         self.sparse_spvs = self.config['loftr']['match_coarse']['sparse_spvs']
-        
+
         # coarse-level
         self.correct_thr = self.loss_config['fine_correct_thr']
         self.c_pos_w = self.loss_config['pos_weight']
@@ -42,7 +42,7 @@ class LoFTRLoss(nn.Module):
 
         if self.loss_config['coarse_type'] == 'cross_entropy':
             assert not self.sparse_spvs, 'Sparse Supervision for cross-entropy not implemented!'
-            conf = torch.clamp(conf, 1e-6, 1-1e-6)
+            conf = torch.clamp(conf, 1e-6, 1 - 1e-6)
             loss_pos = - torch.log(conf[pos_mask])
             loss_neg = - torch.log(1 - conf[neg_mask])
             if weight is not None:
@@ -50,14 +50,14 @@ class LoFTRLoss(nn.Module):
                 loss_neg = loss_neg * weight[neg_mask]
             return c_pos_w * loss_pos.mean() + c_neg_w * loss_neg.mean()
         elif self.loss_config['coarse_type'] == 'focal':
-            conf = torch.clamp(conf, 1e-6, 1-1e-6)
+            conf = torch.clamp(conf, 1e-6, 1 - 1e-6)
             alpha = self.loss_config['focal_alpha']
             gamma = self.loss_config['focal_gamma']
-            
+
             if self.sparse_spvs:
                 pos_conf = conf[:, :-1, :-1][pos_mask] \
-                            if self.match_type == 'sinkhorn' \
-                            else conf[pos_mask]
+                    if self.match_type == 'sinkhorn' \
+                    else conf[pos_mask]
                 loss_pos = - alpha * torch.pow(1 - pos_conf, gamma) * pos_conf.log()
                 # calculate losses for negative samples
                 if self.match_type == 'sinkhorn':
@@ -78,10 +78,10 @@ class LoFTRLoss(nn.Module):
                         neg_w1 = (weight.sum(1) != 0)[neg1]
                         neg_mask = torch.cat([neg_w0, neg_w1], 0)
                         loss_neg = loss_neg[neg_mask]
-                
-                loss =  c_pos_w * loss_pos.mean() + c_neg_w * loss_neg.mean() \
-                            if self.match_type == 'sinkhorn' \
-                            else c_pos_w * loss_pos.mean()
+
+                loss = c_pos_w * loss_pos.mean() + c_neg_w * loss_neg.mean() \
+                    if self.match_type == 'sinkhorn' \
+                    else c_pos_w * loss_pos.mean()
                 return loss
                 # positive and negative elements occupy similar propotions. => more balanced loss weights needed
             else:  # dense supervision (in the case of match_type=='sinkhorn', the dustbin is not supervised.)
@@ -94,7 +94,7 @@ class LoFTRLoss(nn.Module):
                 # each negative element occupy a smaller propotion than positive elements. => higher negative loss weight needed
         else:
             raise ValueError('Unknown coarse loss: {type}'.format(type=self.loss_config['coarse_type']))
-        
+
     def compute_fine_loss(self, expec_f, expec_f_gt):
         if self.fine_type == 'l2_with_std':
             return self._compute_fine_loss_l2_std(expec_f, expec_f_gt)
@@ -136,7 +136,7 @@ class LoFTRLoss(nn.Module):
         # corner case: no correct coarse match found
         if not correct_mask.any():
             if self.training:  # this seldomly happen during training, since we pad prediction with gt
-                               # sometimes there is not coarse-level gt at all.
+                # sometimes there is not coarse-level gt at all.
                 logger.warning("assign a false supervision to avoid ddp deadlock")
                 correct_mask[0] = True
                 weight[0] = 0.
@@ -148,7 +148,7 @@ class LoFTRLoss(nn.Module):
         loss = (offset_l2 * weight[correct_mask]).mean()
 
         return loss
-    
+
     @torch.no_grad()
     def compute_c_weight(self, data):
         """ compute element-wise weights for computing coarse-level loss. """
@@ -179,11 +179,37 @@ class LoFTRLoss(nn.Module):
         loss = loss_c * self.loss_config['coarse_weight']
         loss_scalars.update({"loss_c": loss_c.clone().detach().cpu()})
 
+        if 'conf_matrix_i' in data or 'conf_matrix_with_bin_i' in data:
+            coarse_weight_i = self.loss_config['coarse_weight_i']
+            matcher_type_i = self.config['loftr']['coarse']['anchor_extractor']['matcher']['match_type']
+
+            for i in range(len(coarse_weight_i)):
+                loss_i = self.compute_coarse_loss(
+                    data['conf_matrix_with_bin_i'][i] if self.sparse_spvs and matcher_type_i == 'sinkhorn' \
+                        else data['conf_matrix_i'][i],
+                    data['conf_matrix_gt'],
+                    weight=c_weight)
+                loss += loss_i * coarse_weight_i[i]
+                loss_scalars.update({f"loss_i_{i}": loss_i.clone().detach().cpu()})
+
+        if 'conf_matrix_geo_i' in data or 'conf_matrix_geo_with_bin_i' in data:
+            coarse_weight_geo_i = self.loss_config['coarse_weight_geo_i']
+            matcher_type_geo_i = self.config['loftr']['coarse']['geo_layer']['loss_matcher']['match_type']
+
+            for i in range(len(coarse_weight_geo_i)):
+                loss_geo_i = self.compute_coarse_loss(
+                    data['conf_matrix_geo_with_bin_i'][i] if self.sparse_spvs and matcher_type_geo_i == 'sinkhorn' \
+                        else data['conf_matrix_geo_i'][i],
+                    data['conf_matrix_gt'],
+                    weight=c_weight)
+                loss += loss_geo_i * coarse_weight_geo_i[i]
+                loss_scalars.update({f"loss_geo_i_{i}": loss_geo_i.clone().detach().cpu()})
+
         # 2. fine-level loss
         loss_f = self.compute_fine_loss(data['expec_f'], data['expec_f_gt'])
         if loss_f is not None:
             loss += loss_f * self.loss_config['fine_weight']
-            loss_scalars.update({"loss_f":  loss_f.clone().detach().cpu()})
+            loss_scalars.update({"loss_f": loss_f.clone().detach().cpu()})
         else:
             assert self.training is False
             loss_scalars.update({'loss_f': torch.tensor(1.)})  # 1 is the upper bound

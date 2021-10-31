@@ -2,6 +2,8 @@ import math
 import torch
 from torch import nn
 
+from einops import rearrange
+
 
 class PositionEncodingSine(nn.Module):
     """
@@ -23,9 +25,9 @@ class PositionEncodingSine(nn.Module):
         y_position = torch.ones(max_shape).cumsum(0).float().unsqueeze(0)
         x_position = torch.ones(max_shape).cumsum(1).float().unsqueeze(0)
         if temp_bug_fix:
-            div_term = torch.exp(torch.arange(0, d_model//2, 2).float() * (-math.log(10000.0) / (d_model//2)))
+            div_term = torch.exp(torch.arange(0, d_model // 2, 2).float() * (-math.log(10000.0) / (d_model // 2)))
         else:  # a buggy implementation (for backward compatability only)
-            div_term = torch.exp(torch.arange(0, d_model//2, 2).float() * (-math.log(10000.0) / d_model//2))
+            div_term = torch.exp(torch.arange(0, d_model // 2, 2).float() * (-math.log(10000.0) / d_model // 2))
         div_term = div_term[:, None, None]  # [C//4, 1, 1]
         pe[0::4, :, :] = torch.sin(x_position * div_term)
         pe[1::4, :, :] = torch.cos(x_position * div_term)
@@ -40,3 +42,20 @@ class PositionEncodingSine(nn.Module):
             x: [N, C, H, W]
         """
         return x + self.pe[:, :, :x.size(2), :x.size(3)]
+
+    def forward_anchors(self, feat_nchw: torch.Tensor, anchors: torch.Tensor):
+        n, c, h, w = feat_nchw.shape
+
+        result = []
+        for b in range(n):
+            feat_b_select = feat_nchw[b, :, anchors[b, :, 0].long(), anchors[b, :, 1].long()]  # [C, AN]
+            feat_b_select += self.pe[b, :, anchors[b, :, 0].long(), anchors[b, :, 1].long()]
+            result.append(feat_b_select)
+        result = torch.stack(result, dim=0)
+
+        return result
+
+    def get_hw_flatten(self, h, w):
+        result = self.pe[:, :, :w, :w]
+        result = rearrange(result, 'n c h w -> n (h w) c')
+        return result

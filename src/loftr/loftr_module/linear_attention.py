@@ -12,9 +12,11 @@ def elu_feature_map(x):
 
 
 class LinearAttention(Module):
-    def __init__(self, eps=1e-6):
+    def __init__(self, eps=1e-6, with_feature_map=True):
         super().__init__()
-        self.feature_map = elu_feature_map
+        self.with_feature_map = with_feature_map
+        if self.with_feature_map:
+            self.feature_map = elu_feature_map
         self.eps = eps
 
     def forward(self, queries, keys, values, q_mask=None, kv_mask=None):
@@ -28,8 +30,13 @@ class LinearAttention(Module):
         Returns:
             queried_values: (N, L, H, D)
         """
-        Q = self.feature_map(queries)
-        K = self.feature_map(keys)
+
+        if self.with_feature_map:
+            Q = self.feature_map(queries)
+            K = self.feature_map(keys)
+        else:
+            Q = queries
+            K = keys
 
         # set padded position to zero
         if q_mask is not None:
