@@ -119,8 +119,9 @@ class NewEncoder(nn.Module):
         if self.num_prototype > 0:
 
             if x_prototype is not source_prototype:
-                prototype_trans = torch.einsum('nkc,njc->nkj', x_prototype, source_prototype)
-                source_prototype = torch.einsum('njc,nkj->nkc', source_prototype, prototype_trans)
+                prototype_trans = torch.einsum('nkc,njc->nkj', x_prototype, source_prototype) / x_prototype.size(2)
+                source_prototype = torch.einsum('njc,nkj->nkc', source_prototype,
+                                                prototype_trans) / source_prototype.size(1)
 
             prototype_query = self.prototype_q_proj(x_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
             prototype_key = self.prototype_k_proj(source_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]

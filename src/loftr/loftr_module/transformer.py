@@ -20,9 +20,11 @@ class LocalFeatureTransformer(nn.Module):
         layers = []
 
         for name in self.layer_names:
-            if name == 'self' or name == 'cross':
+            if name in ['self', 'cross']:
                 layers.append(LoFTREncoderLayer(config['d_model'], config['nhead'], config['attention']))
-            elif name.startswith('new'):
+            elif name == 'new-self':
+                layers.append(NewEncoder(config, type='self'))
+            elif name == 'new-cross':
                 layers.append(NewEncoder(config, type='cross'))
             else:
                 raise KeyError
@@ -54,7 +56,7 @@ class LocalFeatureTransformer(nn.Module):
             elif name == 'cross':
                 feat0 = layer(feat0, feat1, mask0, mask1)
                 feat1 = layer(feat1, feat0, mask1, mask0)
-            elif name == 'new' or name == 'new-self' or name == 'new-cross':
+            elif name.startswith('new'):
                 feat0, feat1 = layer(data, feat0, feat1, mask0, mask1)
             else:
                 raise KeyError
