@@ -24,7 +24,7 @@ class NewEncoder(nn.Module):
                                             requires_grad=True)
 
         self.semantic_feat_merger = nn.Sequential(
-            nn.Linear(in_features=self.d_model + self.num_prototype, out_features=self.d_model),
+            nn.Linear(in_features=self.d_model + self.num_prototype, out_features=self.d_model, bias=False),
             nn.LayerNorm(self.d_model),
         )
 
@@ -34,6 +34,7 @@ class NewEncoder(nn.Module):
         assert feat0 is not feat1
 
         bs = feat0.size(0)
+        c = feat0.size(-1)
         hw0_c = data['hw0_c']
         hw1_c = data['hw1_c']
 
@@ -42,8 +43,9 @@ class NewEncoder(nn.Module):
         prototype0 = self.prototype_extractor(query_in, feat0, mask0, hw0_c[0], hw0_c[1])
         prototype1 = self.prototype_extractor(query_in, feat1, mask1, hw1_c[0], hw1_c[1])
 
-        sim0 = torch.einsum('nlc,nkc->nlk', feat0, prototype0)
-        sim1 = torch.einsum('nsc,njc->nsj', feat1, prototype1)
+        # 除以 c 归一化
+        sim0 = torch.einsum('nlc,nkc->nlk', feat0, prototype0) / c
+        sim1 = torch.einsum('nsc,njc->nsj', feat1, prototype1) / c
 
         feat0_cat = torch.cat([feat0, sim0], dim=-1)
         feat1_cat = torch.cat([feat1, sim1], dim=-1)
@@ -61,8 +63,8 @@ class NewEncoder(nn.Module):
             # 需要一个变换矩阵
             sim_trans_matrix = torch.einsum('nkc,njc->nkj', prototype0, prototype1)
 
-            sim0_trans = torch.einsum('nlk,nkj->nlj', sim0, sim_trans_matrix)
-            sim1_trans = torch.einsum('nsj,nkj->nsk', sim1, sim_trans_matrix)
+            sim0_trans = torch.einsum('nlk,nkj->nlj', sim0, sim_trans_matrix) / c
+            sim1_trans = torch.einsum('nsj,nkj->nsk', sim1, sim_trans_matrix) / c
 
             feat0_source = self.semantic_feat_merger(torch.cat([feat0, sim0_trans], dim=-1))
             feat1_source = self.semantic_feat_merger(torch.cat([feat1, sim1_trans], dim=-1))
