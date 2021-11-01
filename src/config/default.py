@@ -150,7 +150,7 @@ _CN.DATASET.MGDPT_DF = 8
 _CN.TRAINER = CN()
 _CN.TRAINER.WORLD_SIZE = 1
 _CN.TRAINER.CANONICAL_BS = 64
-_CN.TRAINER.CANONICAL_LR = 6e-3
+_CN.TRAINER.CANONICAL_LR = 6e-3 * 2
 _CN.TRAINER.SCALING = None  # this will be calculated automatically
 _CN.TRAINER.FIND_LR = False  # use learning rate finder from pytorch-lightning
 
