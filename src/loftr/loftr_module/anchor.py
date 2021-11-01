@@ -19,8 +19,8 @@ class AnchorExtractor(nn.Module):
         self.use_nms = config['use_nms']
         self.nms_pooling_ks = config['nms_pooling_ks']
         self.feat_channels = config['feat_channels']
-        self.conv = nn.Conv1d(in_channels=self.feat_channels + 2 * self.anchor_num, out_channels=self.feat_channels,
-                              kernel_size=(1,), stride=(1,))
+        # self.conv = nn.Conv1d(in_channels=self.feat_channels + 2 * self.anchor_num, out_channels=self.feat_channels,
+        #                       kernel_size=(1,), stride=(1,))
         if self.use_nms:
             self.nms_pooling = nn.Sequential(
                 nn.ConstantPad2d(padding=(0, 1, 0, 1), value=0),

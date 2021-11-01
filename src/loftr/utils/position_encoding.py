@@ -2,7 +2,7 @@ import math
 import torch
 from torch import nn
 
-from einops import rearrange
+from einops import rearrange, repeat
 
 
 class PositionEncodingSine(nn.Module):
@@ -49,13 +49,24 @@ class PositionEncodingSine(nn.Module):
         result = []
         for b in range(n):
             feat_b_select = feat_nchw[b, :, anchors[b, :, 0].long(), anchors[b, :, 1].long()]  # [C, AN]
-            feat_b_select += self.pe[b, :, anchors[b, :, 0].long(), anchors[b, :, 1].long()]
+            feat_b_select += self.pe[0, :, anchors[b, :, 0].long(), anchors[b, :, 1].long()]
             result.append(feat_b_select)
         result = torch.stack(result, dim=0)
 
         return result
 
-    def get_hw_flatten(self, h, w):
-        result = self.pe[:, :, :w, :w]
+    def forward_anchors_only_pe(self, anchors: torch.Tensor):
+        n = anchors.size(0)
+        result = []
+        for b in range(n):
+            select = self.pe[0, :, anchors[b, :, 0].long(), anchors[b, :, 1].long()]
+            result.append(select)
+        result = torch.stack(result, dim=0)
+
+        return result
+
+    def get_hw_flatten(self, n, h, w):
+        result = self.pe[0, :, :h, :w]
+        result = repeat(result, 'c h w -> n c h w', n=n)
         result = rearrange(result, 'n c h w -> n (h w) c')
         return result

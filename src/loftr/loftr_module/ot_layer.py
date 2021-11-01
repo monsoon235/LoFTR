@@ -51,8 +51,6 @@ class OTLayer(nn.Module):
 
             conf_matrix = F.softmax(sim_matrix, 1) * F.softmax(sim_matrix, 2)
 
-            # conf_matrix = torch.nan_to_num(conf_matrix, nan=0)
-
         elif self.type == 'sinkhorn':
             # sinkhorn, dustbin included
             sim_matrix = sim_matrix_out

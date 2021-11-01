@@ -19,9 +19,9 @@ _CN.LOFTR.COARSE = CN()
 _CN.LOFTR.COARSE.D_MODEL = 256
 _CN.LOFTR.COARSE.D_FFN = 256
 _CN.LOFTR.COARSE.NHEAD = 8
-# _CN.LOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] * 4
-_CN.LOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] + ['new-self', 'new-cross'] + \
-                               ['self', 'cross'] + ['new-self', 'new-cross']
+_CN.LOFTR.COARSE.LAYER_NAMES = ['new-self', 'new-cross'] * 4
+# _CN.LOFTR.COARSE.LAYER_NAMES = ['self', 'cross'] + ['new-self', 'new-cross'] + \
+#                                ['self', 'cross'] + ['new-self', 'new-cross']
 _CN.LOFTR.COARSE.ATTENTION = 'linear'  # options: ['linear', 'full']
 _CN.LOFTR.COARSE.TEMP_BUG_FIX = True
 
@@ -57,7 +57,7 @@ _CN.LOFTR.COARSE.GEO_LAYER.ANCHOR_NUM = _CN.LOFTR.COARSE.ANCHOR_EXTRACTOR.ANCHOR
 _CN.LOFTR.COARSE.GEO_LAYER.FEAT_CHANNELS = _CN.LOFTR.COARSE.D_MODEL
 _CN.LOFTR.COARSE.GEO_LAYER.USE_WEIGHT = True
 _CN.LOFTR.COARSE.GEO_LAYER.USE_ATTENTION = True
-_CN.LOFTR.COARSE.GEO_LAYER.USE_LOSS = True
+_CN.LOFTR.COARSE.GEO_LAYER.USE_LOSS = False
 _CN.LOFTR.COARSE.GEO_LAYER.LOSS_MATCHER = _CN.LOFTR.MATCH_COARSE.clone()
 _CN.LOFTR.COARSE.GEO_LAYER.ATTENTION_N_HEAD = 4
 
