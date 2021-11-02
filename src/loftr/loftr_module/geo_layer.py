@@ -99,7 +99,7 @@ class GeoLayer(nn.Module):
 
     def forward(self, data: dict, conf_matrix, anchors: torch.Tensor,
                 feat0: torch.Tensor, feat1: torch.Tensor,
-                mask0: torch.Tensor = None, mask1: torch.Tensor = None):
+                mask0: torch.Tensor, mask1: torch.Tensor):
 
         hw0_c = data['hw0_c']
         hw1_c = data['hw1_c']
@@ -205,13 +205,9 @@ class GeoLayer(nn.Module):
             self.matcher(feat_geo0, feat_geo1, data_copy, mask0, mask1, only_find_matches=True)
 
             if self.matcher.match_type == 'sinkhorn':
-                if 'conf_matrix_geo_with_bin_i' not in data:
-                    data['conf_matrix_geo_with_bin_i'] = []
-                data['conf_matrix_geo_with_bin_i'].append(data_copy['conf_matrix_with_bin'])
+                data['conf_matrix_geo_with_bin_i'] = data_copy['conf_matrix_with_bin']
             else:
-                if 'conf_matrix_geo_i' not in data:
-                    data['conf_matrix_geo_i'] = []
-                data['conf_matrix_geo_i'].append(data_copy['conf_matrix'])
+                data['conf_matrix_geo_i'] = data_copy['conf_matrix']
 
         feat0_in = torch.cat([feat0, feat_geo0], dim=-1)
         feat1_in = torch.cat([feat1, feat_geo1], dim=-1)

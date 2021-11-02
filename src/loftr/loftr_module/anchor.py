@@ -114,13 +114,9 @@ class AnchorExtractor(nn.Module):
 
         # 用于生成监督信号
         if self.matcher.match_type == 'sinkhorn':
-            if 'conf_matrix_with_bin_i' not in data:
-                data['conf_matrix_with_bin_i'] = []
-            data['conf_matrix_with_bin_i'].append(data_copy['conf_matrix_with_bin'])
+            data['conf_matrix_with_bin_i'] = data_copy['conf_matrix_with_bin']
         else:
-            if 'conf_matrix_i' not in data:
-                data['conf_matrix_i'] = []
-            data['conf_matrix_i'].append(data_copy['conf_matrix'])
+            data['conf_matrix_i'] = data_copy['conf_matrix']
 
         with torch.no_grad():
 
@@ -156,8 +152,7 @@ class AnchorExtractor(nn.Module):
 
             anchors = anchors.to(dtype=_dtype)
 
-        if 'anchors_i' not in data:  # 用于可视化
-            data['anchors_i'] = []
-        data['anchors_i'].append(anchors)
+        if 'anchors' not in data:  # 用于可视化
+            data['anchors'] = anchors
 
         return anchors, conf_matrix

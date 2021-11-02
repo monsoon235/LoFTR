@@ -71,10 +71,10 @@ class DETRBlock(nn.Module):
 
 class PrototypeTransformer(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config, is_first=False):
         super(PrototypeTransformer, self).__init__()
-        block_num = config['block_num']
-        self.blocks = nn.ModuleList([DETRBlock(config['block']) for _ in range(block_num)])
+        num_block = config['num_block_first'] if is_first else config['num_block']
+        self.blocks = nn.ModuleList([DETRBlock(config['block']) for _ in range(num_block)])
         self.pos_encoding = PositionEncodingSine(d_model=config['block']['d_model'], temp_bug_fix=True)
 
     def forward(self, query: torch.Tensor, feat: torch.Tensor, feat_mask: torch.Tensor, h: int, w: int) -> torch.Tensor:

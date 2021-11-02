@@ -15,6 +15,7 @@ class OTLayer(nn.Module):
         if self.type == 'dual_softmax':
             self.temperature = config['dsmax_temperature']
         elif self.type == 'sinkhorn':
+            raise NotImplementedError
             try:
                 from .superglue import log_optimal_transport
             except ImportError:
@@ -52,6 +53,7 @@ class OTLayer(nn.Module):
             conf_matrix = F.softmax(sim_matrix, 1) * F.softmax(sim_matrix, 2)
 
         elif self.type == 'sinkhorn':
+            raise NotImplementedError
             # sinkhorn, dustbin included
             sim_matrix = sim_matrix_out
             if mask0 is not None:

@@ -158,6 +158,17 @@ class LoFTRLoss(nn.Module):
             c_weight = None
         return c_weight
 
+    def compute_diversity_loss(self, prototype: torch.Tensor):
+        mul = torch.einsum('npc,nqc->npq', prototype, prototype)
+        norm = torch.norm(prototype, p=2, dim=-1)
+        sim = mul / (norm[:, :, None] * norm[:, None, :] + 1e-5)
+        sim += 1
+        diag = torch.arange(0, prototype.size(1), device=prototype.device)
+        sim[:, diag, diag] = 0
+        loss = sim.sum(dim=[1, 2])
+        loss /= prototype.size(1) * (prototype.size(1) - 1)
+        return loss.mean()
+
     def forward(self, data):
         """
         Update:
@@ -179,31 +190,28 @@ class LoFTRLoss(nn.Module):
         loss = loss_c * self.loss_config['coarse_weight']
         loss_scalars.update({"loss_c": loss_c.clone().detach().cpu()})
 
-        if 'conf_matrix_i' in data or 'conf_matrix_with_bin_i' in data:
+        if self.loss_config['use_coarse_i_loss'] and ('conf_matrix_i' in data or 'conf_matrix_with_bin_i' in data):
             coarse_weight_i = self.loss_config['coarse_weight_i']
             matcher_type_i = self.config['loftr']['coarse']['anchor_extractor']['matcher']['match_type']
+            loss_i = self.compute_coarse_loss(
+                data['conf_matrix_with_bin_i'] if self.sparse_spvs and matcher_type_i == 'sinkhorn' \
+                    else data['conf_matrix_i'],
+                data['conf_matrix_gt'],
+                weight=c_weight)
+            loss += loss_i * coarse_weight_i
+            loss_scalars.update({f"loss_i": loss_i.clone().detach().cpu()})
 
-            for i in range(len(coarse_weight_i)):
-                loss_i = self.compute_coarse_loss(
-                    data['conf_matrix_with_bin_i'][i] if self.sparse_spvs and matcher_type_i == 'sinkhorn' \
-                        else data['conf_matrix_i'][i],
-                    data['conf_matrix_gt'],
-                    weight=c_weight)
-                loss += loss_i * coarse_weight_i[i]
-                loss_scalars.update({f"loss_i_{i}": loss_i.clone().detach().cpu()})
-
-        if 'conf_matrix_geo_i' in data or 'conf_matrix_geo_with_bin_i' in data:
+        if self.loss_config['use_coarse_geo_i_loss'] \
+                and ('conf_matrix_geo_i' in data or 'conf_matrix_geo_with_bin_i' in data):
             coarse_weight_geo_i = self.loss_config['coarse_weight_geo_i']
             matcher_type_geo_i = self.config['loftr']['coarse']['geo_layer']['loss_matcher']['match_type']
-
-            for i in range(len(coarse_weight_geo_i)):
-                loss_geo_i = self.compute_coarse_loss(
-                    data['conf_matrix_geo_with_bin_i'][i] if self.sparse_spvs and matcher_type_geo_i == 'sinkhorn' \
-                        else data['conf_matrix_geo_i'][i],
-                    data['conf_matrix_gt'],
-                    weight=c_weight)
-                loss += loss_geo_i * coarse_weight_geo_i[i]
-                loss_scalars.update({f"loss_geo_i_{i}": loss_geo_i.clone().detach().cpu()})
+            loss_geo_i = self.compute_coarse_loss(
+                data['conf_matrix_geo_with_bin_i'] if self.sparse_spvs and matcher_type_geo_i == 'sinkhorn' \
+                    else data['conf_matrix_geo_i'],
+                data['conf_matrix_gt'],
+                weight=c_weight)
+            loss += loss_geo_i * coarse_weight_geo_i
+            loss_scalars.update({f"loss_geo_i": loss_geo_i.clone().detach().cpu()})
 
         # 2. fine-level loss
         loss_f = self.compute_fine_loss(data['expec_f'], data['expec_f_gt'])
@@ -213,6 +221,17 @@ class LoFTRLoss(nn.Module):
         else:
             assert self.training is False
             loss_scalars.update({'loss_f': torch.tensor(1.)})  # 1 is the upper bound
+
+        # 3. diversity loss
+        if self.loss_config['use_diversity_loss'] and 'prototype0' in data and 'prototype1' in data:
+            prototype0_list = data['prototype0']
+            prototype1_list = data['prototype1']
+            assert len(prototype0_list) == len(prototype1_list)
+            loss_d = torch.mean(torch.tensor(
+                [self.compute_diversity_loss(p) for p in prototype0_list + prototype1_list]
+            ))
+            loss += loss_d * self.loss_config['diversity_weight']
+            loss_scalars.update({f"loss_d": loss_d.clone().detach().cpu()})
 
         loss_scalars.update({'loss': loss.clone().detach().cpu()})
         data.update({"loss": loss, "loss_scalars": loss_scalars})
