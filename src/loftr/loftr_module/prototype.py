@@ -38,7 +38,7 @@ class DETRBlock(nn.Module):
         self.norm3 = nn.LayerNorm(d_model)
 
     def forward(self, query: torch.Tensor, query_pe: torch.Tensor, feat: torch.Tensor, feat_pe: torch.Tensor,
-                feat_mask: torch.Tensor = None) -> torch.Tensor:
+                feat_mask: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
         bs = query.size(0)
 
         if query_pe is not None:
@@ -66,7 +66,7 @@ class DETRBlock(nn.Module):
 
         message_q = self.prototype_q_proj(message_in).view(bs, -1, self.n_head, self.n_dim)
         feat_k = self.prototype_k_proj(feat_in).view(bs, -1, self.n_head, self.n_dim)
-        feat_v = self.prototype_v_proj(feat).view(bs, -1, self.n_head, self.n_dim)
+        feat_v = self.prototype_v_proj(value).view(bs, -1, self.n_head, self.n_dim)
         prototype = self.prototype_extractor_attention(message_q, feat_k, feat_v, None, feat_mask)
         prototype = prototype.view(bs, -1, self.n_head * self.n_dim)
         prototype = self.prototype_merge(prototype)
@@ -87,7 +87,7 @@ class PrototypeTransformer(nn.Module):
         self.pos_encoding = PositionEncodingSine(d_model=config['block']['d_model'], temp_bug_fix=True)
 
     def forward(self, query: torch.Tensor, feat: torch.Tensor, feat_mask: torch.Tensor, h: int, w: int,
-                use_query_pe: bool, use_feat_pe: bool) -> torch.Tensor:
+                use_query_pe: bool, use_feat_pe: bool, value: torch.Tensor) -> torch.Tensor:
         query_in = query
         if use_query_pe:
             query_pe = query
@@ -98,5 +98,6 @@ class PrototypeTransformer(nn.Module):
         else:
             feat_pe = None
         for block in self.blocks:
-            query_in = block.forward(query=query_in, query_pe=query_pe, feat=feat, feat_pe=feat_pe, feat_mask=feat_mask)
+            query_in = block.forward(query=query_in, query_pe=query_pe, feat=feat, feat_pe=feat_pe, feat_mask=feat_mask,
+                                     value=value)
         return query_in

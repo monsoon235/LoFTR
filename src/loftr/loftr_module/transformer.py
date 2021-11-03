@@ -72,9 +72,9 @@ class LocalFeatureTransformer(nn.Module):
             query_in = repeat(self.prototype_query, 'k c -> b k c', b=bs)
 
             prototype0 = self.prototype_extractor(query_in, feat0_no_pe, mask0, hw0_c[0], hw0_c[1], use_query_pe=False,
-                                                  use_feat_pe=False)
+                                                  use_feat_pe=False, value=feat0)
             prototype1 = self.prototype_extractor(query_in, feat1_no_pe, mask1, hw1_c[0], hw1_c[1], use_query_pe=False,
-                                                  use_feat_pe=False)
+                                                  use_feat_pe=False, value=feat1)
 
             sim0 = torch.cosine_similarity(feat0[:, :, None, :], prototype0[:, None, :, :], dim=-1)
             sim1 = torch.cosine_similarity(feat1[:, :, None, :], prototype1[:, None, :, :], dim=-1)
