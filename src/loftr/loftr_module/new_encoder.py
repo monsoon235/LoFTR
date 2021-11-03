@@ -105,14 +105,16 @@ class NewEncoder(nn.Module):
             feat1_out = self.real_forward(data, feat1, feat1, prototype1, prototype1, mask1, mask1)
         elif self.type == 'cross':
             if self.use_trans_matrix:
+                raise NotImplementedError
+                # FIXME
                 trans_matrix = torch.einsum('nkc,njc->nkj', prototype0, prototype1) / prototype0.size(2)
                 prototype_0_to_1 = torch.einsum('nkc,nkj->njc', prototype0, trans_matrix)
                 prototype_1_to_0 = torch.einsum('njc,nkj->nkc', prototype1, trans_matrix)
                 feat0_out = self.real_forward(data, feat0, feat1, prototype0, prototype_1_to_0, mask0, mask1)
                 feat1_out = self.real_forward(data, feat1, feat0, prototype1, prototype_0_to_1, mask1, mask0)
             else:
-                feat0_out = self.real_forward(data, feat0, feat1, prototype0, prototype1, mask0, mask1)
-                feat1_out = self.real_forward(data, feat1, feat0, prototype1, prototype0, mask1, mask0)
+                feat0_out = self.real_forward(data, feat0, feat1, prototype0, prototype0, mask0, mask1)
+                feat1_out = self.real_forward(data, feat1, feat0, prototype1, prototype1, mask1, mask0)
         else:
             raise KeyError
 
@@ -135,15 +137,8 @@ class NewEncoder(nn.Module):
             prototype_query = self.prototype_q_proj(x_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
             prototype_key = self.prototype_k_proj(source_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
 
-            # query_sim = torch.einsum('nlhd,nkhd->nlhk', query, prototype_query)
-            # key_sim = torch.einsum('nlhd,nkhd->nlhk', key, prototype_key)
-
-            # FIXME: OT
-            query_sim, query_sim_ot = self.ot_layer(query, prototype_query, x_mask, None)
-            key_sim, key_sim_ot = self.ot_layer(key, prototype_key, source_mask, None)
-
-            query_sim = query_sim * query_sim_ot
-            key_sim = key_sim * key_sim_ot
+            query_sim = self.ot_layer(query, prototype_query, x_mask)
+            key_sim = self.ot_layer(key, prototype_key, source_mask)
 
             query = rearrange(query_sim, 'n l k h -> n l h k')
             key = rearrange(key_sim, 'n s k h -> n s h k')
