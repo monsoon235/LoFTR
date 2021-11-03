@@ -66,14 +66,14 @@ class NewEncoder(nn.Module):
 
         if self.prototype_query_type == 'anchor':
             prototype0_res = self.prototype_extractor(prototype0_query, feat0_no_pe, mask0, h=hw0_c[0], w=hw0_c[1],
-                                                      use_query_pe=True, use_feat_pe=True)  # [N, AN, C]
+                                                      use_query_pe=True, use_feat_pe=True, value=feat0)  # [N, AN, C]
             prototype1_res = self.prototype_extractor(prototype1_query, feat1_no_pe, mask1, h=hw1_c[0], w=hw1_c[1],
-                                                      use_query_pe=True, use_feat_pe=True)
+                                                      use_query_pe=True, use_feat_pe=True, value=feat1)
         elif self.prototype_query_type == 'query':
             prototype0_res = self.prototype_extractor(prototype0_query, feat0_no_pe, mask0, h=hw0_c[0], w=hw0_c[1],
-                                                      use_query_pe=False, use_feat_pe=False)  # [N, AN, C]
+                                                      use_query_pe=False, use_feat_pe=False, value=feat0)  # [N, AN, C]
             prototype1_res = self.prototype_extractor(prototype1_query, feat1_no_pe, mask1, h=hw1_c[0], w=hw1_c[1],
-                                                      use_query_pe=False, use_feat_pe=False)
+                                                      use_query_pe=False, use_feat_pe=False, value=feat1)
         else:
             raise KeyError
 
