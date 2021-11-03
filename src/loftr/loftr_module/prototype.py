@@ -79,7 +79,8 @@ class PrototypeTransformer(nn.Module):
 
     def forward(self, query: torch.Tensor, feat: torch.Tensor, feat_mask: torch.Tensor, h: int, w: int) -> torch.Tensor:
         query_in = query
-        feat_pe = self.pos_encoding.get_hw_flatten(feat.size(0), h, w)
+        if len(self.blocks) > 0:
+            feat_pe = self.pos_encoding.get_hw_flatten(feat.size(0), h, w)
         for block in self.blocks:
             query_in = block.forward(query=query_in, query_pe=query, feat=feat, feat_pe=feat_pe, feat_mask=feat_mask)
         return query_in

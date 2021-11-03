@@ -68,16 +68,19 @@ class NewEncoder(nn.Module):
         if self.is_first:
             prototype0 = prototype0_res
             prototype1 = prototype1_res
-        else:
+        elif (prototype0_res is not prototype0_query) and (prototype1_res is not prototype1_query):
             prototype0 = prototype0_query + prototype0_res
             prototype1 = prototype1_query + prototype1_res
+        else:
+            prototype0 = prototype0_query
+            prototype1 = prototype1_query
 
         if 'feat0' not in data:
             data['feat0'] = []
         data['feat0'].append(feat0)
         if 'feat1' not in data:
             data['feat1'] = []
-        data['feat1'].append(feat0)
+        data['feat1'].append(feat1)
         if 'prototype0' not in data:
             data['prototype0'] = []
         data['prototype0'].append(prototype0)

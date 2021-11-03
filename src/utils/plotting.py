@@ -6,6 +6,8 @@ import cv2
 import torch
 import torch.nn.functional as F
 
+from einops import repeat
+
 
 def _compute_conf_thresh(data):
     dataset_name = data['dataset_name'][0].lower()
@@ -179,19 +181,18 @@ def make_prototype_figures(data: dict, b_id: int, dpi=75):
     assert len(prototype0_list) == len(prototype1_list)
     assert len(feat0_list) == len(prototype0_list)
 
-    fig, axes = plt.subplots(2, len(feat0_list), figsize=(10, 6), dpi=dpi)
-    for i in range(axes.shape[0]):  # clear all frames
-        for j in range(axes.shape[1]):
-            axes[i][j].get_yaxis().set_ticks([])
-            axes[i][j].get_xaxis().set_ticks([])
-            for spine in axes[i][j].spines.values():
-                spine.set_visible(False)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 6), dpi=dpi)
+    for i in range(len(axes)):  # clear all frames
+        axes[i].get_yaxis().set_ticks([])
+        axes[i].get_xaxis().set_ticks([])
+        for spine in axes[i].spines.values():
+            spine.set_visible(False)
     plt.tight_layout(pad=1)
 
     img0 = np.stack([img0] * 3, axis=2)
     img1 = np.stack([img1] * 3, axis=2)
 
-    for i in range(len(feat0_list)):
+    for i in [0]:  # 只看第一个的可视化
         feat0 = feat0_list[i][b_id].detach()
         feat1 = feat1_list[i][b_id].detach()
         prototype0 = prototype0_list[i][b_id].detach()
@@ -217,8 +218,11 @@ def make_prototype_figures(data: dict, b_id: int, dpi=75):
         for c in range(prototype1.size(0)):
             img1_t[class1_hw_i == c] = img1_t[class1_hw_i == c] * 0.4 + colors[c] * 0.6
 
-        axes[0][i].imshow(img0_t)
-        axes[1][i].imshow(img1_t)
+        # axes[0][i].imshow(img0_t)
+        # axes[1][i].imshow(img1_t)
+
+        axes[0].imshow(img0_t)
+        axes[1].imshow(img1_t)
 
     return fig
 
