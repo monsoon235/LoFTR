@@ -37,10 +37,11 @@ class LocalFeatureTransformer(nn.Module):
                 raise KeyError
         self.layers = nn.ModuleList(layers)
 
-        self.use_prototype = config.get('use_prototype', False)
-        self.num_prototype = config.get('num_prototype', 0)
+        self.use_prototype = config.get('use_prototype', None)
+        self.num_prototype = config.get('num_prototype', None)
         self.prototype_query_type = config.get('prototype_query_type', None)  # query / anchor
-        self.use_geo_feat = config.get('use_geo_feat', False)
+        self.anchor_query_only_pe = config.get('anchor_query_only_pe', None)
+        self.use_geo_feat = config.get('use_geo_feat', None)
 
         if self.use_geo_feat or (self.use_prototype and self.prototype_query_type == 'anchor'):
             self.anchor_extractor = AnchorExtractor(config['anchor_extractor'])
@@ -60,23 +61,23 @@ class LocalFeatureTransformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def get_anchor_query(self, data: dict, feat0: torch.Tensor, feat1: torch.Tensor, anchors: torch.Tensor):
-        hw0_c = data['hw0_c']
-        hw1_c = data['hw1_c']
-        feat0_nchw = rearrange(feat0, 'n (h w) c -> n c h w', h=hw0_c[0])
-        feat1_nchw = rearrange(feat1, 'n (h w) c -> n c h w', h=hw1_c[0])
-        feat0_nchw = self.pos_encoding.forward_anchors(feat0_nchw, anchors[:, :, 0, :])
-        feat1_nchw = self.pos_encoding.forward_anchors(feat1_nchw, anchors[:, :, 1, :])
-        feat0_pe = rearrange(feat0_nchw, 'n c an -> n an c')
-        feat1_pe = rearrange(feat1_nchw, 'n c an -> n an c')
+    def get_anchor_query(self, data: dict, feat0: torch.Tensor, feat1: torch.Tensor, anchors: torch.Tensor,
+                         only_pe: bool = False):
+        if only_pe:
+            feat0_pe = self.pos_encoding.forward_anchors_only_pe(anchors[:, :, 0, :])
+            feat1_pe = self.pos_encoding.forward_anchors_only_pe(anchors[:, :, 1, :])
+        else:
+            hw0_c = data['hw0_c']
+            hw1_c = data['hw1_c']
+            feat0_nchw = rearrange(feat0, 'n (h w) c -> n c h w', h=hw0_c[0])
+            feat1_nchw = rearrange(feat1, 'n (h w) c -> n c h w', h=hw1_c[0])
+            feat0_pe = self.pos_encoding.forward_anchors(feat0_nchw, anchors[:, :, 0, :])
+            feat1_pe = self.pos_encoding.forward_anchors(feat1_nchw, anchors[:, :, 1, :])
+        feat0_pe = rearrange(feat0_pe, 'n c an -> n an c')
+        feat1_pe = rearrange(feat1_pe, 'n c an -> n an c')
         return feat0_pe, feat1_pe
-        # feat0_pe = self.pos_encoding.forward_anchors_only_pe(anchors[:, :, 0, :])
-        # feat1_pe = self.pos_encoding.forward_anchors_only_pe(anchors[:, :, 1, :])
-        # feat0_pe = rearrange(feat0_pe, 'n c an -> n an c')
-        # feat1_pe = rearrange(feat1_pe, 'n c an -> n an c')
-        # return feat0_pe, feat1_pe
 
-    def forward(self, data, feat0, feat1, mask0=None, mask1=None):
+    def forward(self, data, feat0, feat1, mask0, mask1, feat0_no_pe, feat1_no_pe):
         """
         Args:
             feat0 (torch.Tensor): [N, L, C]
@@ -99,7 +100,8 @@ class LocalFeatureTransformer(nn.Module):
                 prototype0_query = prototype_query
                 prototype1_query = prototype_query
             elif self.prototype_query_type == 'anchor':
-                prototype0_query, prototype1_query = self.get_anchor_query(data, feat0, feat1, anchors)
+                prototype0_query, prototype1_query = self.get_anchor_query(data, feat0, feat1, anchors,
+                                                                           only_pe=self.anchor_query_only_pe)
             else:
                 raise KeyError
 
@@ -111,7 +113,8 @@ class LocalFeatureTransformer(nn.Module):
                 feat0, feat1 = layer(feat0, feat1, mask0, mask1), layer(feat1, feat0, mask1, mask0)
             elif name.startswith('new'):
                 feat0, feat1, prototype0_query, prototype1_query = \
-                    layer(data, feat0, feat1, mask0, mask1, prototype0_query, prototype1_query)
+                    layer(data, feat0, feat1, mask0, mask1, prototype0_query, prototype1_query,
+                          feat0_no_pe, feat1_no_pe)
             else:
                 raise KeyError
 

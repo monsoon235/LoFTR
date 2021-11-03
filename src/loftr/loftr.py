@@ -55,13 +55,15 @@ class LoFTR(nn.Module):
 
         # 2. coarse-level loftr module
         # add featmap with positional encoding, then flatten it to sequence [N, HW, C]
+        feat_c0_no_pe = rearrange(feat_c0, 'n c h w -> n (h w) c')
+        feat_c1_no_pe = rearrange(feat_c1, 'n c h w -> n (h w) c')
         feat_c0 = rearrange(self.pos_encoding(feat_c0), 'n c h w -> n (h w) c')
         feat_c1 = rearrange(self.pos_encoding(feat_c1), 'n c h w -> n (h w) c')
 
         mask_c0 = mask_c1 = None  # mask is useful in training
         if 'mask0' in data:
             mask_c0, mask_c1 = data['mask0'].flatten(-2), data['mask1'].flatten(-2)
-        feat_c0, feat_c1 = self.loftr_coarse(data, feat_c0, feat_c1, mask_c0, mask_c1)
+        feat_c0, feat_c1 = self.loftr_coarse(data, feat_c0, feat_c1, mask_c0, mask_c1, feat_c0_no_pe, feat_c1_no_pe)
 
         # 3. match coarse-level
         self.coarse_matching(feat_c0, feat_c1, data, mask_c0=mask_c0, mask_c1=mask_c1)
@@ -69,7 +71,8 @@ class LoFTR(nn.Module):
         # 4. fine-level refinement
         feat_f0_unfold, feat_f1_unfold = self.fine_preprocess(feat_f0, feat_f1, feat_c0, feat_c1, data)
         if feat_f0_unfold.size(0) != 0:  # at least one coarse level predicted
-            feat_f0_unfold, feat_f1_unfold = self.loftr_fine(data, feat_f0_unfold, feat_f1_unfold)
+            feat_f0_unfold, feat_f1_unfold = self.loftr_fine(data, feat_f0_unfold, feat_f1_unfold, None, None,
+                                                             feat_f0_unfold, feat_f1_unfold)
 
         # 5. match fine-level
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)

@@ -23,6 +23,7 @@ class NewEncoder(nn.Module):
         self.dim = self.d_model // self.nhead
         self.use_prototype = config['use_prototype']
         self.num_prototype = config['num_prototype']
+        self.prototype_query_type = config['prototype_query_type']
         self.use_trans_matrix = config['use_trans_matrix']
         self.attention = config['attention']
         self.is_first = is_first
@@ -55,20 +56,31 @@ class NewEncoder(nn.Module):
     def forward(self, data: dict,
                 feat0: torch.Tensor, feat1: torch.Tensor,
                 mask0: torch.Tensor, mask1: torch.Tensor,
-                prototype0_query: torch.Tensor, prototype1_query: torch.Tensor):
+                prototype0_query: torch.Tensor, prototype1_query: torch.Tensor,
+                feat0_no_pe: torch.Tensor, feat1_no_pe: torch.Tensor):
 
         assert feat0 is not feat1  # 防止把两个相同的 feat 输入
 
         hw0_c = data['hw0_c']
         hw1_c = data['hw1_c']
 
-        prototype0_res = self.prototype_extractor(prototype0_query, feat0, mask0, h=hw0_c[0], w=hw0_c[1])  # [N, AN, C]
-        prototype1_res = self.prototype_extractor(prototype1_query, feat1, mask1, h=hw1_c[0], w=hw1_c[1])
+        if self.prototype_query_type == 'anchor':
+            prototype0_res = self.prototype_extractor(prototype0_query, feat0_no_pe, mask0, h=hw0_c[0], w=hw0_c[1],
+                                                      use_query_pe=True, use_feat_pe=True)  # [N, AN, C]
+            prototype1_res = self.prototype_extractor(prototype1_query, feat1_no_pe, mask1, h=hw1_c[0], w=hw1_c[1],
+                                                      use_query_pe=True, use_feat_pe=True)
+        elif self.prototype_query_type == 'query':
+            prototype0_res = self.prototype_extractor(prototype0_query, feat0_no_pe, mask0, h=hw0_c[0], w=hw0_c[1],
+                                                      use_query_pe=False, use_feat_pe=False)  # [N, AN, C]
+            prototype1_res = self.prototype_extractor(prototype1_query, feat1_no_pe, mask1, h=hw1_c[0], w=hw1_c[1],
+                                                      use_query_pe=False, use_feat_pe=False)
+        else:
+            raise KeyError
 
         if self.is_first:
             prototype0 = prototype0_res
             prototype1 = prototype1_res
-        elif (prototype0_res is not prototype0_query) and (prototype1_res is not prototype1_query):
+        elif len(self.prototype_extractor.blocks) > 0:
             prototype0 = prototype0_query + prototype0_res
             prototype1 = prototype1_query + prototype1_res
         else:
