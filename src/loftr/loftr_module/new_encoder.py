@@ -8,7 +8,7 @@ from einops import rearrange, repeat
 
 from .ot_layer import OTLayer
 from .linear_attention import LinearAttention, FullAttention
-from .prototype import PrototypeTransformer
+from .prototype import PrototypeTransformer, PrototypeLinear
 
 
 class NewEncoder(nn.Module):
@@ -24,6 +24,7 @@ class NewEncoder(nn.Module):
         self.use_prototype = config['use_prototype']
         self.num_prototype = config['num_prototype']
         self.prototype_query_type = config['prototype_query_type']
+        self.prototype_extractor_type = config['prototype_extractor_type']
         self.use_trans_matrix = config['use_trans_matrix']
         self.attention = config['attention']
         self.is_first = is_first
@@ -33,9 +34,10 @@ class NewEncoder(nn.Module):
         self.v_proj = nn.Linear(self.d_model, self.d_model, bias=False)
 
         if self.use_prototype:
-            self.prototype_extractor = PrototypeTransformer(config['prototype_extractor'], is_first=is_first)
-            self.prototype_q_proj = nn.Linear(self.d_model, self.d_model, bias=False)
-            self.prototype_k_proj = nn.Linear(self.d_model, self.d_model, bias=False)
+            if self.prototype_extractor_type == 'transformer':
+                self.prototype_extractor = PrototypeTransformer(config['prototype_extractor'], is_first=is_first)
+            elif self.prototype_extractor_type == 'linear':
+                self.prototype_extractor = PrototypeLinear(config)
             self.ot_layer = OTLayer(config['ot_layer'])
 
         # multi-head attention
@@ -64,28 +66,25 @@ class NewEncoder(nn.Module):
         hw0_c = data['hw0_c']
         hw1_c = data['hw1_c']
 
+        if self.is_first:
+            key0 = feat0_no_pe
+            key1 = feat1_no_pe
+        else:
+            key0 = feat0
+            key1 = feat1
+
         if self.prototype_query_type == 'anchor':
-            prototype0_res = self.prototype_extractor(prototype0_query, feat0_no_pe, mask0, h=hw0_c[0], w=hw0_c[1],
-                                                      use_query_pe=True, use_feat_pe=True, value=feat0)  # [N, AN, C]
-            prototype1_res = self.prototype_extractor(prototype1_query, feat1_no_pe, mask1, h=hw1_c[0], w=hw1_c[1],
-                                                      use_query_pe=True, use_feat_pe=True, value=feat1)
+            prototype0 = self.prototype_extractor(prototype0_query, key0, mask0, h=hw0_c[0], w=hw0_c[1],
+                                                  use_query_pe=True, use_feat_pe=True, value=feat0)  # [N, AN, C]
+            prototype1 = self.prototype_extractor(prototype1_query, key1, mask1, h=hw1_c[0], w=hw1_c[1],
+                                                  use_query_pe=True, use_feat_pe=True, value=feat1)
         elif self.prototype_query_type == 'query':
-            prototype0_res = self.prototype_extractor(prototype0_query, feat0_no_pe, mask0, h=hw0_c[0], w=hw0_c[1],
-                                                      use_query_pe=False, use_feat_pe=False, value=feat0)  # [N, AN, C]
-            prototype1_res = self.prototype_extractor(prototype1_query, feat1_no_pe, mask1, h=hw1_c[0], w=hw1_c[1],
-                                                      use_query_pe=False, use_feat_pe=False, value=feat1)
+            prototype0 = self.prototype_extractor(prototype0_query, key0, mask0, h=hw0_c[0], w=hw0_c[1],
+                                                  use_query_pe=False, use_feat_pe=False, value=feat0)  # [N, AN, C]
+            prototype1 = self.prototype_extractor(prototype1_query, key1, mask1, h=hw1_c[0], w=hw1_c[1],
+                                                  use_query_pe=False, use_feat_pe=False, value=feat1)
         else:
             raise KeyError
-
-        if self.is_first:
-            prototype0 = prototype0_res
-            prototype1 = prototype1_res
-        elif len(self.prototype_extractor.blocks) > 0:
-            prototype0 = prototype0_query + prototype0_res
-            prototype1 = prototype1_query + prototype1_res
-        else:
-            prototype0 = prototype0_query
-            prototype1 = prototype1_query
 
         if 'feat0' not in data:
             data['feat0'] = []
@@ -134,8 +133,8 @@ class NewEncoder(nn.Module):
         value = self.v_proj(value).view(bs, -1, self.nhead, self.dim)
 
         if self.use_prototype:
-            prototype_query = self.prototype_q_proj(x_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
-            prototype_key = self.prototype_k_proj(source_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
+            prototype_query = self.q_proj(x_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
+            prototype_key = self.k_proj(source_prototype).view(bs, -1, self.nhead, self.dim)  # [N, K, (H, D)]
 
             query_sim = self.ot_layer(query, prototype_query, x_mask)
             key_sim = self.ot_layer(key, prototype_key, source_mask)

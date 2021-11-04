@@ -159,8 +159,9 @@ class LoFTRLoss(nn.Module):
         return c_weight
 
     def compute_diversity_loss(self, prototype: torch.Tensor):
-        sim = torch.cosine_similarity(prototype[:, :, None, :], prototype[:, None, :, :], dim=-1)
-        sim += 1
+        prototype_normalized = prototype / torch.norm(prototype, p=2, dim=-1, keepdim=True)
+        sim = torch.einsum('npc,nqc->npq', prototype_normalized, prototype_normalized)
+        sim = (sim + 1) / 2
         diag = torch.arange(0, prototype.size(1), device=prototype.device)
         sim[:, diag, diag] = 0
         loss = sim.sum(dim=[1, 2])

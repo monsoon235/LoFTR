@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from einops import rearrange, repeat
+from einops.layers.torch import Rearrange
 
 from .linear_attention import LinearAttention, FullAttention
 from ..utils.position_encoding import PositionEncodingSine
@@ -101,3 +102,29 @@ class PrototypeTransformer(nn.Module):
             query_in = block.forward(query=query_in, query_pe=query_pe, feat=feat, feat_pe=feat_pe, feat_mask=feat_mask,
                                      value=value)
         return query_in
+
+
+class PrototypeLinear(nn.Module):
+
+    def __init__(self, config):
+        super(PrototypeLinear, self).__init__()
+        self.num_prototype = config['num_prototype']
+        # self.res = nn.Sequential(
+        #     nn.Conv2d(in_channels=self.num_prototype, out_channels=self.num_prototype, kernel_size=(3, 3),
+        #               stride=(1, 1), padding=(1, 1)),
+        #     nn.LeakyReLU(inplace=True),
+        #     nn.Conv2d(in_channels=self.num_prototype, out_channels=self.num_prototype, kernel_size=(3, 3),
+        #               stride=(1, 1), padding=(1, 1)),
+        # )
+
+    def forward(self, query: torch.Tensor, feat: torch.Tensor, feat_mask: torch.Tensor, h: int, w: int,
+                use_query_pe: bool, use_feat_pe: bool, value: torch.Tensor):
+        sim = torch.einsum('nlc,nkc->nlk', feat, query)
+        # sim_bchw = rearrange(sim, 'n (h w) k -> n k h w', h=h)
+        # sim_res_bchw = self.res(sim_bchw)
+        # sim_res = rearrange(sim_res_bchw, 'n k h w -> n (h w) k')
+        # sim = sim + sim_res
+        sim = torch.masked_fill(sim, ~feat_mask[:, :, None], -1e9)
+        heatmap = torch.softmax(sim, dim=1)
+        prototype = torch.einsum('nlc,nlk->nkc', value, heatmap)
+        return prototype
