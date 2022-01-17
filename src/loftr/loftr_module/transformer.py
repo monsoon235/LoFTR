@@ -88,13 +88,25 @@ class LocalFeatureTransformer(nn.Module):
 
         assert self.d_model == feat0.size(2), "the feature number of src and transformer must be equal"
 
+        # 加速 attention
+
+        N = feat0.size(0)
+
         for layer, name in zip(self.layers, self.layer_names):
             if name == 'self':
-                feat0 = layer(feat0, feat0, mask0, mask0)
-                feat1 = layer(feat1, feat1, mask1, mask1)
+                feat_query = torch.cat([feat0, feat1], dim=0)
+                feat_value = feat_query
+                mask_query = torch.cat([mask0, mask1], dim=0)
+                mask_value = mask_query
+                feat_result = layer(feat_query, feat_value, mask_query, mask_value)
+                feat0, feat1 = feat_result[:N], feat_result[N:]
             elif name == 'cross':
-                feat0 = layer(feat0, feat1, mask0, mask1)
-                feat1 = layer(feat1, feat0, mask1, mask0)
+                feat_query = torch.cat([feat0, feat1], dim=0)
+                feat_value = torch.cat([feat1, feat0], dim=0)
+                mask_query = torch.cat([mask0, mask1], dim=0)
+                mask_value = torch.cat([mask1, mask0], dim=0)
+                feat_result = layer(feat_query, feat_value, mask_query, mask_value)
+                feat0, feat1 = feat_result[:N], feat_result[N:]
             else:
                 raise KeyError
 
